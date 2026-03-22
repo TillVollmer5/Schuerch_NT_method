@@ -1,11 +1,13 @@
 """
 pipeline.py - End-to-end GCMS data processing pipeline.
 
-Runs all three processing steps in sequence:
+Runs all processing steps in sequence:
 
   Step 1  data_import.py       -> output/peak_matrix_raw.csv
   Step 2  blank_correction.py  -> output/peak_matrix_blank_corrected.csv
   Step 3  normalization.py     -> output/peak_matrix_processed.csv
+  Step 4  pca.py               -> output/plots/pca_scores.png + loadings
+  Step 5  hca.py               -> output/plots/hca_heatmap.png + dendrogram orders
 
 All parameters are read from config.py. Edit config.py to adapt the
 pipeline to a new sample series without changing any processing code.
@@ -17,6 +19,8 @@ To run individual steps:
     python data_import.py
     python blank_correction.py
     python normalization.py
+    python pca.py
+    python hca.py
 """
 
 import os
@@ -32,6 +36,7 @@ import data_import
 import blank_correction
 import normalization
 import pca as pca_step
+import hca as hca_step
 
 
 def main():
@@ -55,12 +60,14 @@ def main():
     normalization.run(config)
     print()
     pca_step.run(config)
+    print()
+    hca_step.run(config)
 
     print()
     print("=" * 62)
     print("  Pipeline complete.")
     print(f"  Processed matrix : {os.path.join(config.OUTPUT_DIR, 'peak_matrix_processed.csv')}")
-    print(f"  PCA plots        : {os.path.join(config.OUTPUT_DIR, 'plots', '')}")
+    print(f"  Plots            : {os.path.join(config.OUTPUT_DIR, 'plots', '')}")
     print("=" * 62)
 
 

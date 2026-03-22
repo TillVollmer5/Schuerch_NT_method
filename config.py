@@ -80,6 +80,15 @@ SCALING = "pareto"
 # "auto"   - mean-centre, divide by std   (unit-variance; stronger equalisation)
 # "none"   - skip scaling (apply only after log transform)
 
+# --- HCA (hca.py) -------------------------------------------------------------
+HCA_LINKAGE           = "ward"       # linkage method: "ward", "average", "complete", "single"
+                                     # note: ward requires metric="euclidean"
+HCA_METRIC            = "euclidean"  # distance metric; switch to "correlation" with
+                                     # linkage "average" or "complete"
+HCA_CMAP              = "vlag"       # diverging colormap suited to mean-centred scaled data
+HCA_MAX_FEATURE_LABELS = 50          # label the feature axis when n_features <= this value;
+                                     # set to 0 to always hide feature labels
+
 # --- PCA (pca.py) -------------------------------------------------------------
 N_COMPONENTS    = 3   # number of principal components to compute and save
                       # increase to retain more dimensions (e.g. 5 for scree plot)
