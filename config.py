@@ -80,6 +80,18 @@ SCALING = "pareto"
 # "auto"   - mean-centre, divide by std   (unit-variance; stronger equalisation)
 # "none"   - skip scaling (apply only after log transform)
 
+# --- Volcano plot (volcano.py) -----------------------------------------------
+VOLCANO_COMPARISONS  = "all"
+# "all" - run every pairwise group comparison automatically
+# or specify a list of (groupA, groupB) tuples, e.g.:
+#   VOLCANO_COMPARISONS = [("S", "S-R")]
+# log2FC is expressed as groupA / groupB (positive = higher in A)
+
+VOLCANO_FC_THRESHOLD  = 1.0    # log2 fold-change cutoff (1.0 = 2-fold change)
+VOLCANO_P_THRESHOLD   = 0.05   # Benjamini-Hochberg adjusted p-value threshold
+VOLCANO_TOP_LABELS    = 10     # number of top significant features to label in the plot
+                                # ranked by adjusted p-value; set to 0 to suppress labels
+
 # --- HCA (hca.py) -------------------------------------------------------------
 HCA_LINKAGE           = "ward"       # linkage method: "ward", "average", "complete", "single"
                                      # note: ward requires metric="euclidean"

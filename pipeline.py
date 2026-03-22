@@ -8,6 +8,7 @@ Runs all processing steps in sequence:
   Step 3  normalization.py     -> output/peak_matrix_processed.csv
   Step 4  pca.py               -> output/plots/pca_scores.png + loadings
   Step 5  hca.py               -> output/plots/hca_heatmap.png + dendrogram orders
+  Step 6  volcano.py           -> output/plots/volcano_*.png + results tables
 
 All parameters are read from config.py. Edit config.py to adapt the
 pipeline to a new sample series without changing any processing code.
@@ -21,6 +22,7 @@ To run individual steps:
     python normalization.py
     python pca.py
     python hca.py
+    python volcano.py
 """
 
 import os
@@ -37,6 +39,7 @@ import blank_correction
 import normalization
 import pca as pca_step
 import hca as hca_step
+import volcano as volcano_step
 
 
 def main():
@@ -62,6 +65,8 @@ def main():
     pca_step.run(config)
     print()
     hca_step.run(config)
+    print()
+    volcano_step.run(config)
 
     print()
     print("=" * 62)
