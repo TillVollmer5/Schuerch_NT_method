@@ -1,0 +1,14 @@
+# Python environment
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Pipeline outputs (generated — do not commit)
+output/
+
+# Raw data (add your own CSVs to DATA/)
+DATA/*.csv
+
+# macOS
+.DS_Store
