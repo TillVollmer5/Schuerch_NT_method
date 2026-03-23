@@ -63,6 +63,30 @@ import pandas as pd
 import config
 
 
+# --- Prevalence filter -------------------------------------------------------
+
+def _prevalence_filter(matrix, min_prevalence):
+    """
+    Remove features detected in fewer than *min_prevalence* fraction of samples.
+    'Detected' means area > 0 (operates on a features x samples matrix).
+
+    Parameters
+    ----------
+    matrix          : DataFrame  features x samples  (values are raw areas)
+    min_prevalence  : float      0.0 = keep all; 1.0 = require detection in every sample
+
+    Returns
+    -------
+    filtered : DataFrame
+    n_removed : int
+    """
+    if min_prevalence <= 0.0:
+        return matrix, 0
+    detected_fraction = (matrix > 0).mean(axis=1)
+    keep = detected_fraction >= min_prevalence
+    return matrix.loc[keep], int((~keep).sum())
+
+
 # --- Exclusion list (PCA only) -----------------------------------------------
 
 def _apply_exclusion(matrix, metadata, exclusion_rts, rt_margin):
@@ -229,18 +253,28 @@ def run(cfg=config):
           f"log{base_label}(x+1)  ->  {cfg.SCALING} scaling")
 
     # -- full matrix (HCA + volcano) ------------------------------------------
-    processed = _transform(matrix, cfg)
+    matrix_hca, n_rem_hca = _prevalence_filter(matrix, cfg.MIN_PREVALENCE_HCA)
+    if n_rem_hca:
+        print(f"  prevalence filter (HCA): removed {n_rem_hca} feature(s) "
+              f"detected in < {cfg.MIN_PREVALENCE_HCA*100:.0f}% of samples")
+
+    processed = _transform(matrix_hca, cfg)
     out_full  = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_processed.csv")
     processed.to_csv(out_full)
     print(f"  -> {out_full}  ({processed.shape[0]} samples x {processed.shape[1]} features)"
           f"  [HCA, volcano]")
 
-    # -- exclusion-filtered matrix (PCA only) ---------------------------------
+    # -- exclusion-filtered + prevalence-filtered matrix (PCA only) -----------
+    matrix_pca, n_rem_pca = _prevalence_filter(matrix, cfg.MIN_PREVALENCE_PCA)
+    if n_rem_pca:
+        print(f"  prevalence filter (PCA): removed {n_rem_pca} feature(s) "
+              f"detected in < {cfg.MIN_PREVALENCE_PCA*100:.0f}% of samples")
+
     excl_rts = [rt for rt in cfg.EXCLUSION_LIST if rt is not None]
 
     if excl_rts:
         matrix_pca, removed = _apply_exclusion(
-            matrix, metadata, excl_rts, cfg.EXCLUSION_RT_MARGIN
+            matrix_pca, metadata, excl_rts, cfg.EXCLUSION_RT_MARGIN
         )
         print(f"  exclusion list : {len(excl_rts)} RT(s), "
               f"margin +-{cfg.EXCLUSION_RT_MARGIN} min  ->  "
@@ -250,9 +284,9 @@ def run(cfg=config):
         removed.to_csv(excl_log, index=False)
         print(f"  -> {excl_log}")
 
-        processed_pca = _transform(matrix_pca, cfg)
-    else:
-        processed_pca = processed   # identical when no exclusions
+    processed_pca = _transform(matrix_pca, cfg)
+    if not excl_rts and n_rem_pca == 0:
+        processed_pca = processed   # identical when no filters applied
 
     out_pca = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_processed_pca.csv")
     processed_pca.to_csv(out_pca)

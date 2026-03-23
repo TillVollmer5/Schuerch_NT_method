@@ -60,6 +60,24 @@ EXCLUSION_LIST = [
 
 EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
 
+# --- Missingness / prevalence filter ------------------------------------------
+# Features coded as 0 after blank correction are "not detected" in that sample.
+# These parameters control the minimum fraction of samples in which a feature
+# must be detected (area > 0) to be retained in each analysis.
+# Range: 0.0 (keep all) to 1.0 (require detection in every sample).
+#
+# PCA  - strict filter recommended: noise features with many zeros destabilise
+#        principal components without adding biological information.
+# HCA  - moderate filter; sparse features create uninformative columns but
+#        group-shared features should be retained. Set to 0.0 to disable.
+# Volcano - keep at 0.0 by default: a compound present in ALL samples of one
+#        group but NONE of the other is the most biologically interesting result.
+#        Filtering by overall prevalence would remove exactly those features.
+
+MIN_PREVALENCE_PCA     = 0.5   # e.g. 0.5 = detected in >= 50% of all samples
+MIN_PREVALENCE_HCA     = 0.0   # set > 0 to drop sparse features from the heatmap
+MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
+
 # --- Blank correction (blank_correction.py) -----------------------------------
 FOLD_CHANGE_THRESHOLD = 3.0
 # A feature is removed if:

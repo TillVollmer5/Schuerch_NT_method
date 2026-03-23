@@ -126,6 +126,9 @@ output/
 | `RT_MARGIN` | `0.05` | Minutes; peaks within this window -> same feature |
 | `USE_MZ` | `False` | Also cluster by m/z (for dense spectra) |
 | `ALIGN_RT` | `True` | Apply median RT-shift correction before feature detection |
+| `MIN_PREVALENCE_PCA` | `0.5` | Min fraction of samples a feature must be detected in (area > 0) for PCA; 0.0 = disabled |
+| `MIN_PREVALENCE_HCA` | `0.0` | Same filter for HCA; disabled by default |
+| `MIN_PREVALENCE_VOLCANO` | `0.0` | Same filter for volcano; keep at 0.0 — group-specific features (present in one group, absent in other) are the most relevant findings |
 | `FOLD_CHANGE_THRESHOLD` | `3.0` | Minimum sample/blank ratio to retain a feature |
 | `EXCLUSION_LIST` | `[]` | RT values (min) of known compounds to exclude from PCA only |
 | `EXCLUSION_RT_MARGIN` | `0.05` | +- window for exclusion list matching |

@@ -322,6 +322,17 @@ def run(cfg=config):
     print(f"  samples   : {matrix.shape[1]}")
     print(f"  groups    : {available_groups}")
 
+    # optional prevalence filter (applied before normalization)
+    min_prev = getattr(cfg, "MIN_PREVALENCE_VOLCANO", 0.0)
+    if min_prev > 0.0:
+        detected_fraction = (matrix > 0).mean(axis=1)
+        keep   = detected_fraction >= min_prev
+        n_rem  = int((~keep).sum())
+        matrix = matrix.loc[keep]
+        print(f"  prevalence filter: removed {n_rem} feature(s) "
+              f"detected in < {min_prev*100:.0f}% of samples  "
+              f"({matrix.shape[0]} retained)")
+
     # apply normalization + log2 (no Pareto scaling)
     print(f"  normalization: {cfg.NORMALIZATION}  +  log2(x+1)")
     matrix_log2 = _normalize_log2(matrix, cfg.NORMALIZATION)
