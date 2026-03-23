@@ -43,20 +43,40 @@ MZ_ALIGN_TOLERANCE = 0.1   # Da  - m/z window used during RT alignment
 
 VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 
-# --- Exclusion list (blank_correction.py) ------------------------------------
-# Retention times (in minutes) of known interference compounds to always remove.
-# Any feature whose mean RT falls within +-EXCLUSION_RT_MARGIN of a listed RT
-# will be excluded in the same step as blank correction.
+# --- Exclusion list (normalization.py -> PCA only) ---------------------------
+# Retention times (in minutes) of biologically relevant features to withhold
+# from PCA so they do not dominate the principal components.
+# Applied in normalization.py when building peak_matrix_processed_pca.csv.
+# HCA and the volcano plot always use the full feature set (peak_matrix_processed.csv)
+# so that known compounds remain visible and statistically testable there.
 #
 # Example entries (uncomment or add your own):
-#   3.086,   # Chloroiodomethane - common solvent artefact
-#   4.044,   # 3-Hexenal         - known matrix background
+#   3.086,   # Chloroiodomethane
+#   4.044,   # 3-Hexenal
 
 EXCLUSION_LIST = [
     # 3.086,
 ]
 
 EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
+
+# --- Missingness / prevalence filter ------------------------------------------
+# Features coded as 0 after blank correction are "not detected" in that sample.
+# These parameters control the minimum fraction of samples in which a feature
+# must be detected (area > 0) to be retained in each analysis.
+# Range: 0.0 (keep all) to 1.0 (require detection in every sample).
+#
+# PCA  - strict filter recommended: noise features with many zeros destabilise
+#        principal components without adding biological information.
+# HCA  - moderate filter; sparse features create uninformative columns but
+#        group-shared features should be retained. Set to 0.0 to disable.
+# Volcano - keep at 0.0 by default: a compound present in ALL samples of one
+#        group but NONE of the other is the most biologically interesting result.
+#        Filtering by overall prevalence would remove exactly those features.
+
+MIN_PREVALENCE_PCA     = 0.5   # e.g. 0.5 = detected in >= 50% of all samples
+MIN_PREVALENCE_HCA     = 0.0   # set > 0 to drop sparse features from the heatmap
+MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
 # --- Blank correction (blank_correction.py) -----------------------------------
 FOLD_CHANGE_THRESHOLD = 3.0
@@ -80,13 +100,37 @@ SCALING = "pareto"
 # "auto"   - mean-centre, divide by std   (unit-variance; stronger equalisation)
 # "none"   - skip scaling (apply only after log transform)
 
+# --- Volcano plot (volcano.py) -----------------------------------------------
+VOLCANO_COMPARISONS  = "all"
+# "all" - run every pairwise group comparison automatically
+# or specify a list of (groupA, groupB) tuples, e.g.:
+#   VOLCANO_COMPARISONS = [("S", "S-R")]
+# log2FC is expressed as groupA / groupB (positive = higher in A)
+
+VOLCANO_FC_THRESHOLD  = 1.0    # log2 fold-change cutoff (1.0 = 2-fold change)
+VOLCANO_P_THRESHOLD   = 0.05   # Benjamini-Hochberg adjusted p-value threshold
+VOLCANO_TOP_LABELS    = 10     # number of top significant features to label in the plot
+                                # ranked by adjusted p-value; set to 0 to suppress labels
+
+# --- HCA (hca.py) -------------------------------------------------------------
+HCA_LINKAGE           = "ward"       # linkage method: "ward", "average", "complete", "single"
+                                     # note: ward requires metric="euclidean"
+HCA_METRIC            = "euclidean"  # distance metric; switch to "correlation" with
+                                     # linkage "average" or "complete"
+HCA_CMAP              = "vlag"       # diverging colormap suited to mean-centred scaled data
+HCA_MAX_FEATURE_LABELS = 50          # label the feature axis when n_features <= this value;
+                                     # set to 0 to always hide feature labels
+
 # --- PCA (pca.py) -------------------------------------------------------------
-N_COMPONENTS    = 3   # number of principal components to compute and save
+N_COMPONENTS    = 2   # number of principal components to compute and save
                       # increase to retain more dimensions (e.g. 5 for scree plot)
 
 PCA_PLOT_X      = 1   # PC number to plot on the X axis (1-indexed)
 PCA_PLOT_Y      = 2   # PC number to plot on the Y axis (1-indexed)
 
-PCA_ELLIPSE     = True   # draw 95 % confidence ellipses per group (requires scipy)
-PCA_TOP_LOADINGS = 10   # number of top-loading features to label in the loadings plot
+PCA_ELLIPSE      = True  # draw 95 % confidence ellipses per group (requires scipy)
+PCA_TOP_LOADINGS = 10   # number of top-loading features to label in the loadings scatter plot
                         # set to 0 to skip labels
+PCA_BAR_TOP      = 10   # number of features shown in the loading bar chart (pca_loadings_bar.png)
+                        # selected by Euclidean distance in the PC_x/PC_y loading plane;
+                        # increase to inspect more candidates (e.g. 20)
