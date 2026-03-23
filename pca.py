@@ -451,7 +451,8 @@ def run(cfg=config):
     print("-- Step 4: PCA ---------------------------------------------------")
 
     # load inputs
-    matrix_path = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_processed.csv")
+    # PCA uses the exclusion-filtered matrix; HCA and volcano use the full matrix
+    matrix_path = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_processed_pca.csv")
     groups_path = os.path.join(cfg.OUTPUT_DIR, "sample_groups.csv")
 
     if not os.path.exists(matrix_path):

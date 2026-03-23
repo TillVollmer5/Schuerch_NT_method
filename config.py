@@ -43,14 +43,16 @@ MZ_ALIGN_TOLERANCE = 0.1   # Da  - m/z window used during RT alignment
 
 VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 
-# --- Exclusion list (blank_correction.py) ------------------------------------
-# Retention times (in minutes) of known interference compounds to always remove.
-# Any feature whose mean RT falls within +-EXCLUSION_RT_MARGIN of a listed RT
-# will be excluded in the same step as blank correction.
+# --- Exclusion list (normalization.py -> PCA only) ---------------------------
+# Retention times (in minutes) of biologically relevant features to withhold
+# from PCA so they do not dominate the principal components.
+# Applied in normalization.py when building peak_matrix_processed_pca.csv.
+# HCA and the volcano plot always use the full feature set (peak_matrix_processed.csv)
+# so that known compounds remain visible and statistically testable there.
 #
 # Example entries (uncomment or add your own):
-#   3.086,   # Chloroiodomethane - common solvent artefact
-#   4.044,   # 3-Hexenal         - known matrix background
+#   3.086,   # Chloroiodomethane
+#   4.044,   # 3-Hexenal
 
 EXCLUSION_LIST = [
     # 3.086,
