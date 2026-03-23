@@ -38,7 +38,7 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")          # non-interactive backend - no display needed
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
+
 from sklearn.decomposition import PCA
 
 import config
@@ -103,7 +103,6 @@ def _confidence_ellipse(x, y, ax, n_std=2.0, **kwargs):
     if len(x) < 2:
         return
     from matplotlib.patches import Ellipse
-    import matplotlib.transforms as transforms
 
     cov  = np.cov(x, y)
     eigvals, eigvecs = np.linalg.eigh(cov)
@@ -224,6 +223,93 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
     ax.set_ylabel(f"{col_y}  ({pct_y:.1f} %)", fontsize=11)
     ax.set_title("PCA loadings", fontsize=12, fontweight="bold")
     ax.grid(True, linestyle=":", linewidth=0.5, alpha=0.6)
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=200)
+    plt.close(fig)
+
+
+# --- Loading bar chart -------------------------------------------------------
+
+def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
+                      output_path, top_n=10):
+    """
+    Grouped horizontal bar chart showing the top *top_n* features by
+    Euclidean distance from the origin in the PC_x / PC_y loading plane.
+
+    Each feature gets one bar per PC so that positive and negative impacts
+    on both components can be read simultaneously.  Features are sorted by
+    their PC_x loading so the direction of effect is immediately visible.
+
+    Selection criterion (Euclidean distance) integrates both PCs: a feature
+    that loads strongly on either or both axes will be included.
+
+    Parameters
+    ----------
+    loadings_df : DataFrame  features x PCs
+    variance_df : DataFrame  from fit_pca
+    pc_x, pc_y  : int        1-indexed PC numbers (matching PCA_PLOT_X/Y)
+    output_path : str
+    top_n       : int        number of features to show (config: PCA_BAR_TOP)
+    """
+    col_x = f"PC{pc_x}"
+    col_y = f"PC{pc_y}"
+    pct_x = variance_df.loc[col_x, "explained_variance_ratio"] * 100
+    pct_y = variance_df.loc[col_y, "explained_variance_ratio"] * 100
+
+    lx   = loadings_df[col_x].values
+    ly   = loadings_df[col_y].values
+    dist = np.sqrt(lx ** 2 + ly ** 2)
+
+    # select top_n by distance, then sort by PC_x loading for display
+    top_n    = min(top_n, len(loadings_df))
+    top_idx  = np.argsort(dist)[-top_n:]
+    top_idx  = top_idx[np.argsort(lx[top_idx])]   # sort ascending by PC_x
+
+    feat_labels = [loadings_df.index[i] for i in top_idx]
+    vals_x      = lx[top_idx]
+    vals_y      = ly[top_idx]
+
+    # layout: one bar group per feature, two bars per group
+    y_pos   = np.arange(top_n)
+    height  = 0.35                         # bar thickness
+    col_pcx = "#2166ac"                    # blue  - PC_x
+    col_pcy = "#d6604d"                    # red   - PC_y
+
+    fig_h = max(4.0, top_n * 0.55 + 1.2)  # scale figure height with n features
+    fig, ax = plt.subplots(figsize=(7, fig_h))
+
+    bars_x = ax.barh(y_pos + height / 2, vals_x, height,
+                     color=col_pcx, alpha=0.82, label=f"{col_x}  ({pct_x:.1f} %)",
+                     zorder=3)
+    bars_y = ax.barh(y_pos - height / 2, vals_y, height,
+                     color=col_pcy, alpha=0.82, label=f"{col_y}  ({pct_y:.1f} %)",
+                     zorder=3)
+
+    # value labels at bar ends
+    for bar in bars_x:
+        w = bar.get_width()
+        ax.text(w + (0.002 if w >= 0 else -0.002), bar.get_y() + bar.get_height() / 2,
+                f"{w:+.3f}", va="center", ha="left" if w >= 0 else "right",
+                fontsize=6.5, color=col_pcx)
+    for bar in bars_y:
+        w = bar.get_width()
+        ax.text(w + (0.002 if w >= 0 else -0.002), bar.get_y() + bar.get_height() / 2,
+                f"{w:+.3f}", va="center", ha="left" if w >= 0 else "right",
+                fontsize=6.5, color=col_pcy)
+
+    ax.axvline(0, color="#888888", linewidth=0.9, zorder=2)
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(feat_labels, fontsize=8)
+    ax.set_xlabel("Loading value", fontsize=10)
+    ax.set_title(
+        f"Top {top_n} features by loading magnitude\n"
+        f"(selected by Euclidean distance in {col_x}/{col_y} space)",
+        fontsize=10, fontweight="bold",
+    )
+    ax.legend(fontsize=9, framealpha=0.9, loc="lower right")
+    ax.grid(True, axis="x", linestyle=":", linewidth=0.4, alpha=0.5)
+    ax.set_axisbelow(True)
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=200)
@@ -425,6 +511,13 @@ def run(cfg=config):
                   pc_x, pc_y, out_plot_loadings,
                   top_n=cfg.PCA_TOP_LOADINGS)
     print(f"  -> {out_plot_loadings}")
+
+    # loading bar chart (always produced)
+    out_bar = os.path.join(plots_dir, "pca_loadings_bar.png")
+    plot_loadings_bar(loadings_df, variance_df,
+                      pc_x, pc_y, out_bar,
+                      top_n=cfg.PCA_BAR_TOP)
+    print(f"  -> {out_bar}")
 
     # 3D interactive plots (only when exactly 3 components are computed)
     if n == 3:
