@@ -11,8 +11,9 @@ HCA and the volcano plot always operate on the full feature set.
 
 Input  : output/peak_matrix_raw.csv
          output/blank_features.csv
+         output/feature_metadata.csv   (for RT/m/z lookup in audit log)
 Output : output/peak_matrix_blank_corrected.csv
-         output/features_removed_blank.csv     (audit log)
+         output/features_removed_blank.csv  (audit log with fold-change detail)
 
 Usage:
     python blank_correction.py
@@ -45,8 +46,9 @@ def blank_correction(matrix, blank_series, fold_change_threshold):
 
     Returns
     -------
-    filtered : DataFrame  features that passed the threshold
-    removed  : Index      features that were removed
+    filtered   : DataFrame  features that passed the threshold
+    removed_df : DataFrame  audit table for removed features with columns:
+                    feature_id, mean_sample_area, max_blank_area, fold_change
     """
     # align blank signal to matrix index; features absent from blanks -> 0
     blank_aligned = blank_series.reindex(matrix.index).fillna(0)
@@ -63,7 +65,14 @@ def blank_correction(matrix, blank_series, fold_change_threshold):
     filtered = matrix.loc[keep]
     removed  = matrix.index[~keep]
 
-    return filtered, removed
+    removed_df = pd.DataFrame({
+        "feature_id":       removed,
+        "mean_sample_area": mean_area.loc[removed].values,
+        "max_blank_area":   blank_aligned.loc[removed].values,
+        "fold_change":      fold_change.loc[removed].values,
+    })
+
+    return filtered, removed_df
 
 
 # --- Main ---------------------------------------------------------------------
@@ -73,8 +82,9 @@ def run(cfg=config):
 
     print("-- Step 2: blank correction --------------------------------------")
 
-    matrix_path = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_raw.csv")
-    blank_path  = os.path.join(cfg.OUTPUT_DIR, "blank_features.csv")
+    matrix_path   = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_raw.csv")
+    blank_path    = os.path.join(cfg.OUTPUT_DIR, "blank_features.csv")
+    metadata_path = os.path.join(cfg.OUTPUT_DIR, "feature_metadata.csv")
 
     for p in (matrix_path, blank_path):
         if not os.path.exists(p):
@@ -87,16 +97,25 @@ def run(cfg=config):
     print(f"  fold-change threshold: {cfg.FOLD_CHANGE_THRESHOLD}x  "
           f"({(blank_series > 0).sum()} features with blank signal)")
 
-    filtered, removed_blank = blank_correction(
+    filtered, removed_df = blank_correction(
         matrix, blank_series, cfg.FOLD_CHANGE_THRESHOLD
     )
-    print(f"  removed : {len(removed_blank)} features")
+    print(f"  removed : {len(removed_df)} features")
     print(f"  retained: {len(filtered)} features")
 
-    if len(removed_blank) > 0:
+    if len(removed_df) > 0:
+        # join mean_rt and mean_mz from feature metadata for full context
+        if os.path.exists(metadata_path):
+            meta = pd.read_csv(metadata_path, index_col="feature_id")[["mean_rt", "mean_mz"]]
+            removed_df = removed_df.set_index("feature_id").join(meta, how="left").reset_index()
+            # reorder columns for readability
+            cols = ["feature_id", "mean_rt", "mean_mz",
+                    "mean_sample_area", "max_blank_area", "fold_change"]
+            removed_df = removed_df[[c for c in cols if c in removed_df.columns]]
+
         blank_log = os.path.join(cfg.OUTPUT_DIR, "features_removed_blank.csv")
-        pd.DataFrame({"feature_id": removed_blank}).to_csv(blank_log, index=False)
-        print(f"  -> {blank_log}")
+        removed_df.to_csv(blank_log, index=False)
+        print(f"  -> {blank_log}  (incl. fold-change detail)")
 
     out_path = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_blank_corrected.csv")
     filtered.to_csv(out_path)

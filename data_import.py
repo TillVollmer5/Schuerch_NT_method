@@ -5,10 +5,17 @@ Loads TraceFinder CSV exports from DATA_DIR, classifies files into samples /
 QC / blanks, detects features by retention-time clustering across all samples,
 and writes the following files to OUTPUT_DIR:
 
-  peak_matrix_raw.csv    - features x samples  (NaN filled with 0)
-  feature_metadata.csv   - feature_id, mean_rt, mean_mz
-  blank_features.csv     - feature_id, max_blank_area
-  qc_matrix.csv          - features x QC samples  (saved for reference / QC checks)
+  peak_matrix_raw.csv        - features x samples  (missing values filled with 0)
+  feature_metadata.csv       - feature_id, mean_rt, mean_mz, cluster spread stats,
+                               n_samples_detected, n_contributing_peaks
+  blank_features.csv         - feature_id, max_blank_area
+  feature_peak_log.csv       - full provenance: one row per raw peak,
+                               which feature it was assigned to, source sample,
+                               ref_mz, rt_raw (pre-alignment), rt_aligned,
+                               rt_shift applied, area, and whether the peak was
+                               selected (True) or replaced by a higher-area
+                               duplicate from the same sample in the same cluster
+  rt_alignment_shifts.csv    - median RT shift applied per sample (0.0 if none)
 
 Usage:
     python data_import.py
@@ -100,15 +107,22 @@ def align_retention_times(file_dict, mz_tolerance=0.1):
 
     The first file (alphabetically) is used as the alignment reference.
     Alignment is skipped silently for files missing the required columns.
+
+    Returns
+    -------
+    file_dict : dict  (modified in-place with corrected RTs)
+    shifts    : dict  sample_name -> float  (median RT shift applied; 0.0 if none)
     """
+    shifts = {name: 0.0 for name in file_dict}
+
     if len(file_dict) < 2:
-        return file_dict
+        return file_dict, shifts
 
     ref_name = sorted(file_dict.keys())[0]
     ref_df   = file_dict[ref_name]
 
     if "Reference m/z" not in ref_df.columns or "Retention Time" not in ref_df.columns:
-        return file_dict
+        return file_dict, shifts
 
     ref_sorted = ref_df.sort_values("Reference m/z").reset_index(drop=True)
 
@@ -132,28 +146,42 @@ def align_retention_times(file_dict, mz_tolerance=0.1):
             if pd.notna(shift):
                 file_dict[name] = df.copy()
                 file_dict[name]["Retention Time"] = df["Retention Time"] + shift
+                shifts[name] = float(shift)
 
-    return file_dict
+    return file_dict, shifts
 
 
 # --- Feature detection --------------------------------------------------------
 
-def _pool_peaks(file_dict, value_col):
+def _pool_peaks(file_dict, value_col, rt_shifts=None):
     """
     Flatten all DataFrames in *file_dict* into a list of peak dicts.
 
-    Each dict has keys: sample, rt, mz, area.
+    Each dict has keys: sample, rt (aligned), rt_raw (pre-alignment),
+    rt_aligned, rt_shift, mz, area.
     Rows with unparseable numeric values are skipped.
+
+    Parameters
+    ----------
+    file_dict  : dict  sample_name -> DataFrame
+    value_col  : str   column to extract for area
+    rt_shifts  : dict  sample_name -> float  (from align_retention_times)
+                       If None, all shifts are treated as 0.
     """
     peaks = []
     for sample_name, df in file_dict.items():
+        shift = (rt_shifts or {}).get(sample_name, 0.0)
         for _, row in df.iterrows():
             try:
+                rt_aligned = float(row["Retention Time"])
                 peaks.append({
-                    "sample": sample_name,
-                    "rt":     float(row["Retention Time"]),
-                    "mz":     float(row["Reference m/z"]),
-                    "area":   float(row.get(value_col, 0) or 0),
+                    "sample":     sample_name,
+                    "rt":         rt_aligned,          # used for clustering
+                    "rt_raw":     rt_aligned - shift,  # original RT before alignment
+                    "rt_aligned": rt_aligned,
+                    "rt_shift":   shift,
+                    "mz":         float(row["Reference m/z"]),
+                    "area":       float(row.get(value_col, 0) or 0),
                 })
             except (ValueError, TypeError):
                 pass
@@ -172,23 +200,23 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
     3. Optional m/z sub-clustering: split each RT cluster by m/z proximity
        (within *mz_tolerance*) to separate co-eluting compounds.
     4. Within each final cluster, if the same sample appears more than once,
-       keep the peak with the highest area.
+       keep the peak with the highest area (ties: first occurrence wins).
 
     Feature ID format
     -----------------
     use_mz=False : "RT_{mean_rt:.4f}"
     use_mz=True  : "{mean_mz:.4f}_{mean_rt:.4f}"
 
-    Parameters
-    ----------
-    peaks        : list of dicts  (from _pool_peaks)
-    rt_margin    : float  minutes
-    use_mz       : bool
-    mz_tolerance : float  Da
+    Each feature record includes a *peak_log* list with one entry per raw peak
+    that was assigned to this cluster.  The *selected* field is True for the
+    peak whose area is used in the matrix, False for within-sample duplicates
+    that were replaced by a higher-area peak.
 
     Returns
     -------
-    list of dicts, each with: feature_id, rt, mz, sample_areas (dict)
+    list of dicts, each with:
+        feature_id, rt, mz, sample_areas (dict),
+        peak_log (list of dicts), rt_values (list), mz_values (list)
     """
     if not peaks:
         return []
@@ -227,18 +255,43 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
         mean_mz = sum(p["mz"]  for p in cl) / len(cl)
         fid     = f"{mean_mz:.4f}_{mean_rt:.4f}" if use_mz else f"RT_{mean_rt:.4f}"
 
-        # one area per sample - keep maximum when same sample appears twice
-        sample_areas = {}
+        # determine maximum area per sample (for matrix + selection flag)
+        max_per_sample = {}
         for p in cl:
             s = p["sample"]
-            if s not in sample_areas or p["area"] > sample_areas[s]:
-                sample_areas[s] = p["area"]
+            if s not in max_per_sample or p["area"] > max_per_sample[s]:
+                max_per_sample[s] = p["area"]
+
+        sample_areas = dict(max_per_sample)   # one area per sample
+
+        # build peak log - first occurrence of max area is "selected"
+        _seen_selected = set()
+        peak_log = []
+        for p in cl:
+            s = p["sample"]
+            is_max      = (p["area"] == max_per_sample[s])
+            is_selected = is_max and (s not in _seen_selected)
+            if is_selected:
+                _seen_selected.add(s)
+            peak_log.append({
+                "feature_id": fid,
+                "sample":     s,
+                "ref_mz":     p["mz"],
+                "rt_raw":     p.get("rt_raw",     p["rt"]),
+                "rt_aligned": p.get("rt_aligned", p["rt"]),
+                "rt_shift":   p.get("rt_shift",   0.0),
+                "area":       p["area"],
+                "selected":   is_selected,
+            })
 
         features.append({
             "feature_id":   fid,
             "rt":           mean_rt,
             "mz":           mean_mz,
             "sample_areas": sample_areas,
+            "peak_log":     peak_log,
+            "rt_values":    [p["rt"]  for p in cl],
+            "mz_values":    [p["mz"]  for p in cl],
         })
 
     return features
@@ -268,7 +321,7 @@ def build_blank_table(features, blank_dict, rt_margin,
     Returns a Series indexed by feature_id with the maximum blank area.
     Features with no blank signal get a value of 0.
     """
-    blank_peaks = _pool_peaks(blank_dict, value_col)
+    blank_peaks = _pool_peaks(blank_dict, value_col)   # shifts default to 0
     max_blank   = {}
 
     for feat in features:
@@ -307,13 +360,34 @@ def run(cfg=config):
     print(f"  blanks          : {sorted(blanks.keys())}")
 
     # optional RT alignment (reference = first sample alphabetically)
-    if cfg.ALIGN_RT:
-        samples = align_retention_times(samples, cfg.MZ_ALIGN_TOLERANCE)
-        blanks  = align_retention_times(blanks,  cfg.MZ_ALIGN_TOLERANCE)
-        print(f"  RT alignment    : enabled (ref = {sorted(samples.keys())[0] if samples else '-'})")
+    sample_shifts = {s: 0.0 for s in samples}
+    blank_shifts  = {b: 0.0 for b in blanks}
 
-    # feature detection from all sample peaks
-    sample_peaks = _pool_peaks(samples, cfg.VALUE_COL)
+    if cfg.ALIGN_RT:
+        samples, sample_shifts = align_retention_times(samples, cfg.MZ_ALIGN_TOLERANCE)
+        blanks,  blank_shifts  = align_retention_times(blanks,  cfg.MZ_ALIGN_TOLERANCE)
+        ref = sorted(samples.keys())[0] if samples else "-"
+        print(f"  RT alignment    : enabled (ref = {ref})")
+
+        # save alignment shifts for traceability
+        all_shifts = {**sample_shifts, **blank_shifts}
+        shifts_df  = pd.DataFrame(
+            [{"sample": s, "rt_shift_applied": v} for s, v in sorted(all_shifts.items())]
+        )
+        out_shifts = os.path.join(cfg.OUTPUT_DIR, "rt_alignment_shifts.csv")
+        shifts_df.to_csv(out_shifts, index=False)
+        print(f"  -> {out_shifts}")
+    else:
+        # write a zero-shifts file so downstream tools always find the file
+        all_shifts = {**sample_shifts, **blank_shifts}
+        shifts_df  = pd.DataFrame(
+            [{"sample": s, "rt_shift_applied": 0.0} for s in sorted(all_shifts)]
+        )
+        out_shifts = os.path.join(cfg.OUTPUT_DIR, "rt_alignment_shifts.csv")
+        shifts_df.to_csv(out_shifts, index=False)
+
+    # feature detection from all sample peaks (pass shifts for RT provenance)
+    sample_peaks = _pool_peaks(samples, cfg.VALUE_COL, rt_shifts=sample_shifts)
     features     = detect_features(
         sample_peaks,
         rt_margin    = cfg.RT_MARGIN,
@@ -347,14 +421,48 @@ def run(cfg=config):
     group_df.to_csv(out_groups)
     print(f"  -> {out_groups}")
 
-    # feature metadata (useful for downstream annotation)
-    meta = pd.DataFrame([
-        {"feature_id": f["feature_id"], "mean_rt": f["rt"], "mean_mz": f["mz"]}
-        for f in features
-    ]).set_index("feature_id")
+    # --- feature metadata (enhanced with cluster spread and detection counts) --
+    n_samples = len(sample_order)
+    meta_rows = []
+    for f in features:
+        rt_vals = f["rt_values"]
+        mz_vals = f["mz_values"]
+        n_det   = int((matrix.loc[f["feature_id"]] > 0).sum())
+        meta_rows.append({
+            "feature_id":          f["feature_id"],
+            "mean_rt":             f["rt"],
+            "mean_mz":             f["mz"],
+            "rt_min":              min(rt_vals),
+            "rt_max":              max(rt_vals),
+            "rt_std":              (sum((v - f["rt"]) ** 2 for v in rt_vals) / len(rt_vals)) ** 0.5
+                                   if len(rt_vals) > 1 else 0.0,
+            "mz_min":              min(mz_vals),
+            "mz_max":              max(mz_vals),
+            "mz_std":              (sum((v - f["mz"]) ** 2 for v in mz_vals) / len(mz_vals)) ** 0.5
+                                   if len(mz_vals) > 1 else 0.0,
+            "n_samples_detected":  n_det,
+            "n_samples_total":     n_samples,
+            "n_contributing_peaks": len(f["peak_log"]),
+        })
+    meta = pd.DataFrame(meta_rows).set_index("feature_id")
     out_meta = os.path.join(cfg.OUTPUT_DIR, "feature_metadata.csv")
     meta.to_csv(out_meta)
-    print(f"  -> {out_meta}")
+    print(f"  -> {out_meta}  (incl. cluster spread and detection counts)")
+
+    # --- peak provenance log --------------------------------------------------
+    peak_log_rows = []
+    for f in features:
+        peak_log_rows.extend(f["peak_log"])
+
+    peak_log_df = pd.DataFrame(peak_log_rows, columns=[
+        "feature_id", "sample", "ref_mz",
+        "rt_raw", "rt_aligned", "rt_shift", "area", "selected",
+    ])
+    out_peak_log = os.path.join(cfg.OUTPUT_DIR, "feature_peak_log.csv")
+    peak_log_df.to_csv(out_peak_log, index=False)
+    n_duplicates = int((~peak_log_df["selected"]).sum())
+    print(f"  -> {out_peak_log}  "
+          f"({len(peak_log_df)} peaks total, {n_duplicates} within-cluster duplicates)")
 
     # blank reference table
     blank_table = build_blank_table(

@@ -96,13 +96,30 @@ output/
 |-- peak_matrix_blank_corrected.csv      after blank correction (full feature set)
 |-- peak_matrix_processed.csv            normalized + log2 + scaled (samples x features)
 |                                        used by: HCA, volcano plot
-|-- peak_matrix_processed_pca.csv        same as above with EXCLUSION_LIST applied
+|-- peak_matrix_processed_pca.csv        same as above with prevalence + EXCLUSION_LIST applied
 |                                        used by: PCA
-|-- feature_metadata.csv                 mean RT and m/z per feature
+|
+|-- Provenance / audit trail
+|-- feature_metadata.csv                 mean RT, m/z, cluster spread (rt_min/max/std,
+|                                        mz_min/max/std), n_samples_detected, n_contributing_peaks
+|-- feature_peak_log.csv                 one row per raw peak: feature_id, sample (= source file),
+|                                        ref_mz, rt_raw (pre-alignment), rt_aligned, rt_shift,
+|                                        area, selected (True = used in matrix; False = replaced
+|                                        by higher-area duplicate from same sample in cluster)
+|-- rt_alignment_shifts.csv              median RT shift applied per sample (0.0 when disabled)
 |-- blank_features.csv                   max blank area per feature
 |-- sample_groups.csv                    group assignments for plot colouring
-|-- features_removed_blank.csv           audit log - blank filter removals
-|-- features_removed_exclusion.csv       audit log - exclusion list removals (if any)
+|-- features_removed_blank.csv           blank filter removals: mean_rt, mean_mz,
+|                                        mean_sample_area, max_blank_area, fold_change
+|-- features_removed_exclusion.csv       exclusion list removals: mean_rt, matched_exclusion_rt,
+|                                        rt_deviation  (only when EXCLUSION_LIST is non-empty)
+|-- features_removed_prevalence_hca.csv  prevalence filter removals for HCA matrix
+|                                        (only when MIN_PREVALENCE_HCA > 0)
+|-- features_removed_prevalence_pca.csv  prevalence filter removals for PCA matrix
+|                                        (only when MIN_PREVALENCE_PCA > 0)
+|-- features_removed_zero_variance.csv   features dropped by scaling (zero variance after log2)
+|                                        (only when any are removed)
+|
 |-- pca_scores.csv                       sample scores for all N_COMPONENTS
 |-- pca_loadings.csv                     feature loadings for all N_COMPONENTS
 |-- pca_variance.csv                     explained variance per component
