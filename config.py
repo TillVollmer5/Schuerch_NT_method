@@ -85,6 +85,14 @@ FOLD_CHANGE_THRESHOLD = 3.0
 # Features absent from blanks are always retained.
 # Common values: 3 (lenient) - 10 (strict)
 
+BLANK_USE_MZ       = False   # if True, also require m/z proximity for a blank peak
+                              # to count as a match against a sample feature.
+                              # Without this, a blank peak at the same RT but a
+                              # different m/z (a different compound) can cause a
+                              # sample feature to be incorrectly removed.
+BLANK_MZ_TOLERANCE = 0.005   # Da  - maximum |feature_mz - blank_mz| to accept match
+                              # used only when BLANK_USE_MZ = True
+
 # --- Normalization (normalization.py) -----------------------------------------
 NORMALIZATION = "sum"
 # "sum"    - divide each sample by its total signal (scaled to median column sum)
@@ -120,6 +128,16 @@ HCA_METRIC            = "euclidean"  # distance metric; switch to "correlation" 
 HCA_CMAP              = "vlag"       # diverging colormap suited to mean-centred scaled data
 HCA_MAX_FEATURE_LABELS = 50          # label the feature axis when n_features <= this value;
                                      # set to 0 to always hide feature labels
+
+# --- Feature labelling (pca.py, hca.py, volcano.py) --------------------------
+COMPOUND_NAME_COL = "Component Name"   # column in TraceFinder CSVs holding compound names
+                              # set to "" to disable name extraction
+
+FEATURE_LABEL = "id"         # how to label features in plots and axes
+                              # "id"   - use the auto-generated feature_id  (default)
+                              # "name" - use the compound name of the most abundant
+                              #          signal in the cluster; falls back to feature_id
+                              #          when no name is available
 
 # --- PCA (pca.py) -------------------------------------------------------------
 N_COMPONENTS    = 2   # number of principal components to compute and save

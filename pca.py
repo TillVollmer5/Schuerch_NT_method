@@ -44,6 +44,29 @@ from sklearn.decomposition import PCA
 import config
 
 
+# --- Feature label helper -----------------------------------------------------
+
+def _load_feature_labels(cfg):
+    """
+    Load a feature_id -> display label mapping when FEATURE_LABEL = "name".
+
+    Returns an empty dict when FEATURE_LABEL = "id" (the default) or when
+    feature_name_map.csv is not found.  Individual entries fall back to the
+    feature_id when no compound name is available.
+    """
+    if getattr(cfg, "FEATURE_LABEL", "id") != "name":
+        return {}
+    map_path = os.path.join(cfg.OUTPUT_DIR, "feature_name_map.csv")
+    if not os.path.exists(map_path):
+        print("  [info] feature_name_map.csv not found; using feature_id labels")
+        return {}
+    df = pd.read_csv(map_path, index_col="feature_id")
+    if "compound_name" not in df.columns:
+        return {}
+    return {fid: name for fid, name in df["compound_name"].items()
+            if pd.notna(name) and str(name).strip()}
+
+
 # --- Colour / marker palette (extendable for more groups) --------------------
 
 _PALETTE = [
@@ -478,7 +501,7 @@ def run(cfg=config):
         print(f"  {pc}: {row['explained_variance_ratio']*100:.1f} %  "
               f"(cumulative: {row['cumulative_explained_variance']*100:.1f} %)")
 
-    # save data files
+    # save data files (always use feature_id as index in CSVs)
     out_scores   = os.path.join(cfg.OUTPUT_DIR, "pca_scores.csv")
     out_loadings = os.path.join(cfg.OUTPUT_DIR, "pca_loadings.csv")
     out_variance = os.path.join(cfg.OUTPUT_DIR, "pca_variance.csv")
@@ -490,6 +513,16 @@ def run(cfg=config):
     print(f"  -> {out_scores}")
     print(f"  -> {out_loadings}")
     print(f"  -> {out_variance}")
+
+    # build display loadings (compound names when FEATURE_LABEL = "name")
+    label_map = _load_feature_labels(cfg)
+    if label_map:
+        display_loadings = loadings_df.copy()
+        display_loadings.index = [label_map.get(fid, fid)
+                                   for fid in loadings_df.index]
+        print(f"  feature labels     : compound names  (FEATURE_LABEL='name')")
+    else:
+        display_loadings = loadings_df
 
     # validate requested PC axes
     pc_x, pc_y = cfg.PCA_PLOT_X, cfg.PCA_PLOT_Y
@@ -508,14 +541,14 @@ def run(cfg=config):
 
     # 2D loadings plot (always produced)
     out_plot_loadings = os.path.join(plots_dir, "pca_loadings.png")
-    plot_loadings(loadings_df, variance_df,
+    plot_loadings(display_loadings, variance_df,
                   pc_x, pc_y, out_plot_loadings,
                   top_n=cfg.PCA_TOP_LOADINGS)
     print(f"  -> {out_plot_loadings}")
 
     # loading bar chart (always produced)
     out_bar = os.path.join(plots_dir, "pca_loadings_bar.png")
-    plot_loadings_bar(loadings_df, variance_df,
+    plot_loadings_bar(display_loadings, variance_df,
                       pc_x, pc_y, out_bar,
                       top_n=cfg.PCA_BAR_TOP)
     print(f"  -> {out_bar}")
@@ -527,7 +560,7 @@ def run(cfg=config):
         print(f"  -> {out_3d_scores}  (interactive)")
 
         out_3d_loadings = os.path.join(plots_dir, "pca_loadings_3d.html")
-        plot_loadings_3d(loadings_df, variance_df, out_3d_loadings,
+        plot_loadings_3d(display_loadings, variance_df, out_3d_loadings,
                          top_n=cfg.PCA_TOP_LOADINGS)
         print(f"  -> {out_3d_loadings}  (interactive)")
 

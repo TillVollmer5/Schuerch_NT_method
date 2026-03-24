@@ -96,13 +96,37 @@ output/
 |-- peak_matrix_blank_corrected.csv      after blank correction (full feature set)
 |-- peak_matrix_processed.csv            normalized + log2 + scaled (samples x features)
 |                                        used by: HCA, volcano plot
-|-- peak_matrix_processed_pca.csv        same as above with EXCLUSION_LIST applied
+|-- peak_matrix_processed_pca.csv        same as above with prevalence + EXCLUSION_LIST applied
 |                                        used by: PCA
-|-- feature_metadata.csv                 mean RT and m/z per feature
-|-- blank_features.csv                   max blank area per feature
+|
+|-- Provenance / audit trail
+|-- feature_metadata.csv                 mean RT, m/z, compound_name (from most abundant
+|                                        signal), cluster spread (rt_min/max/std,
+|                                        mz_min/max/std), n_samples_detected, n_contributing_peaks
+|-- feature_name_map.csv                 feature_id -> compound_name lookup table
+|                                        (used by PCA / HCA / volcano when FEATURE_LABEL='name')
+|-- feature_peak_log.csv                 one row per raw peak: feature_id, sample (= source file),
+|                                        ref_mz, rt_raw (pre-alignment), rt_aligned, rt_shift,
+|                                        area, selected (True = used in matrix; False = replaced
+|                                        by higher-area duplicate from same sample in cluster)
+|-- rt_alignment_shifts.csv              median RT shift applied per sample (0.0 when disabled)
+|-- blank_features.csv                   max_blank_area, blank_rt, blank_mz per feature
+|                                        (blank_rt/mz = RT/m/z of the best RT-matched blank peak)
 |-- sample_groups.csv                    group assignments for plot colouring
-|-- features_removed_blank.csv           audit log - blank filter removals
-|-- features_removed_exclusion.csv       audit log - exclusion list removals (if any)
+|-- features_removed_blank.csv           blank filter removals: mean_rt, mean_mz,
+|                                        mean_sample_area, max_blank_area, fold_change
+|-- features_rescued_mz_gate.csv         features that had an RT-matched blank peak
+|                                        but were retained because |Δm/z| > BLANK_MZ_TOLERANCE
+|                                        (only when BLANK_USE_MZ=True and any are rescued)
+|-- features_removed_exclusion.csv       exclusion list removals: mean_rt, matched_exclusion_rt,
+|                                        rt_deviation  (only when EXCLUSION_LIST is non-empty)
+|-- features_removed_prevalence_hca.csv  prevalence filter removals for HCA matrix
+|                                        (only when MIN_PREVALENCE_HCA > 0)
+|-- features_removed_prevalence_pca.csv  prevalence filter removals for PCA matrix
+|                                        (only when MIN_PREVALENCE_PCA > 0)
+|-- features_removed_zero_variance.csv   features dropped by scaling (zero variance after log2)
+|                                        (only when any are removed)
+|
 |-- pca_scores.csv                       sample scores for all N_COMPONENTS
 |-- pca_loadings.csv                     feature loadings for all N_COMPONENTS
 |-- pca_variance.csv                     explained variance per component
@@ -130,6 +154,8 @@ output/
 | `MIN_PREVALENCE_HCA` | `0.0` | Same filter for HCA; disabled by default |
 | `MIN_PREVALENCE_VOLCANO` | `0.0` | Same filter for volcano; keep at 0.0 — group-specific features (present in one group, absent in other) are the most relevant findings |
 | `FOLD_CHANGE_THRESHOLD` | `3.0` | Minimum sample/blank ratio to retain a feature |
+| `BLANK_USE_MZ` | `False` | Also require m/z proximity for a blank peak to count as a match; prevents a different compound eluting at the same RT in the blank from incorrectly removing a sample feature |
+| `BLANK_MZ_TOLERANCE` | `0.005` | Da — maximum \|feature_mz − blank_mz\| accepted when `BLANK_USE_MZ = True` |
 | `EXCLUSION_LIST` | `[]` | RT values (min) of known compounds to exclude from PCA only |
 | `EXCLUSION_RT_MARGIN` | `0.05` | +- window for exclusion list matching |
 | `NORMALIZATION` | `"sum"` | Per-sample signal correction method |
@@ -143,6 +169,8 @@ output/
 | `HCA_METRIC` | `"euclidean"` | Distance metric for HCA |
 | `HCA_CMAP` | `"vlag"` | Colormap for heatmap (diverging, suited to scaled data) |
 | `HCA_MAX_FEATURE_LABELS` | `50` | Show feature axis labels when n_features <= this |
+| `COMPOUND_NAME_COL` | `"Name"` | Column in TraceFinder CSVs holding compound names; `""` to disable |
+| `FEATURE_LABEL` | `"id"` | `"id"` = use feature_id in plots; `"name"` = use compound name (falls back to feature_id) |
 | `VOLCANO_COMPARISONS` | `"all"` | Group pairs to compare; "all" runs all pairwise |
 | `VOLCANO_FC_THRESHOLD` | `1.0` | log2 fold-change cutoff (1.0 = 2-fold) |
 | `VOLCANO_P_THRESHOLD` | `0.05` | BH-adjusted p-value significance threshold |
