@@ -312,30 +312,46 @@ def build_matrix(features, sample_names):
     return matrix
 
 
-def build_blank_table(features, blank_dict, rt_margin,
-                      use_mz=False, mz_tolerance=0.005, value_col="Area"):
+def build_blank_table(features, blank_dict, rt_margin, value_col="Area"):
     """
-    For each sample feature, find the maximum peak area across all blank files
-    within +-rt_margin (and +-mz_tolerance when use_mz=True).
+    For each sample feature, find the blank peak with the highest area
+    within +-rt_margin (RT-only matching).  The matched blank peak's
+    m/z and RT are also stored so that blank_correction.py can optionally
+    apply an additional m/z proximity gate (BLANK_USE_MZ in config.py).
 
-    Returns a Series indexed by feature_id with the maximum blank area.
-    Features with no blank signal get a value of 0.
+    RT-only matching is intentional here: the m/z gate is a separate,
+    independently configurable step in blank_correction.py.  This avoids
+    conflating feature-detection m/z clustering (USE_MZ) with blank-matching
+    m/z stringency (BLANK_USE_MZ).
+
+    Returns
+    -------
+    DataFrame indexed by feature_id with columns:
+        max_blank_area  - highest blank area within the RT window (0 if no match)
+        blank_rt        - RT of the matched blank peak (NaN if no match)
+        blank_mz        - m/z of the matched blank peak (NaN if no match)
     """
     blank_peaks = _pool_peaks(blank_dict, value_col)   # shifts default to 0
-    max_blank   = {}
+    rows = {}
 
     for feat in features:
-        best = 0.0
+        best_area = 0.0
+        best_mz   = float("nan")
+        best_rt   = float("nan")
         for bp in blank_peaks:
-            rt_ok = abs(bp["rt"] - feat["rt"]) <= rt_margin
-            mz_ok = (not use_mz) or (abs(bp["mz"] - feat["mz"]) <= mz_tolerance)
-            if rt_ok and mz_ok and bp["area"] > best:
-                best = bp["area"]
-        max_blank[feat["feature_id"]] = best
+            if abs(bp["rt"] - feat["rt"]) <= rt_margin and bp["area"] > best_area:
+                best_area = bp["area"]
+                best_mz   = bp["mz"]
+                best_rt   = bp["rt"]
+        rows[feat["feature_id"]] = {
+            "max_blank_area": best_area,
+            "blank_rt":       best_rt,
+            "blank_mz":       best_mz,
+        }
 
-    s = pd.Series(max_blank, name="max_blank_area")
-    s.index.name = "feature_id"
-    return s
+    df = pd.DataFrame(rows).T
+    df.index.name = "feature_id"
+    return df
 
 
 # --- Main ---------------------------------------------------------------------
@@ -464,18 +480,16 @@ def run(cfg=config):
     print(f"  -> {out_peak_log}  "
           f"({len(peak_log_df)} peaks total, {n_duplicates} within-cluster duplicates)")
 
-    # blank reference table
+    # blank reference table (RT-only matching; m/z gate is in blank_correction.py)
     blank_table = build_blank_table(
         features, blanks,
-        rt_margin    = cfg.RT_MARGIN,
-        use_mz       = cfg.USE_MZ,
-        mz_tolerance = cfg.MZ_TOLERANCE,
-        value_col    = cfg.VALUE_COL,
+        rt_margin = cfg.RT_MARGIN,
+        value_col = cfg.VALUE_COL,
     )
     out_blank = os.path.join(cfg.OUTPUT_DIR, "blank_features.csv")
-    blank_table.to_frame().to_csv(out_blank)
+    blank_table.to_csv(out_blank)
     print(f"  -> {out_blank}  "
-          f"({(blank_table > 0).sum()} features with blank signal)")
+          f"({(blank_table['max_blank_area'] > 0).sum()} features with blank signal)")
 
     return matrix, blank_table, group_map
 

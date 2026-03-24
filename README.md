@@ -107,10 +107,14 @@ output/
 |                                        area, selected (True = used in matrix; False = replaced
 |                                        by higher-area duplicate from same sample in cluster)
 |-- rt_alignment_shifts.csv              median RT shift applied per sample (0.0 when disabled)
-|-- blank_features.csv                   max blank area per feature
+|-- blank_features.csv                   max_blank_area, blank_rt, blank_mz per feature
+|                                        (blank_rt/mz = RT/m/z of the best RT-matched blank peak)
 |-- sample_groups.csv                    group assignments for plot colouring
 |-- features_removed_blank.csv           blank filter removals: mean_rt, mean_mz,
 |                                        mean_sample_area, max_blank_area, fold_change
+|-- features_rescued_mz_gate.csv         features that had an RT-matched blank peak
+|                                        but were retained because |Δm/z| > BLANK_MZ_TOLERANCE
+|                                        (only when BLANK_USE_MZ=True and any are rescued)
 |-- features_removed_exclusion.csv       exclusion list removals: mean_rt, matched_exclusion_rt,
 |                                        rt_deviation  (only when EXCLUSION_LIST is non-empty)
 |-- features_removed_prevalence_hca.csv  prevalence filter removals for HCA matrix
@@ -147,6 +151,8 @@ output/
 | `MIN_PREVALENCE_HCA` | `0.0` | Same filter for HCA; disabled by default |
 | `MIN_PREVALENCE_VOLCANO` | `0.0` | Same filter for volcano; keep at 0.0 — group-specific features (present in one group, absent in other) are the most relevant findings |
 | `FOLD_CHANGE_THRESHOLD` | `3.0` | Minimum sample/blank ratio to retain a feature |
+| `BLANK_USE_MZ` | `False` | Also require m/z proximity for a blank peak to count as a match; prevents a different compound eluting at the same RT in the blank from incorrectly removing a sample feature |
+| `BLANK_MZ_TOLERANCE` | `0.005` | Da — maximum \|feature_mz − blank_mz\| accepted when `BLANK_USE_MZ = True` |
 | `EXCLUSION_LIST` | `[]` | RT values (min) of known compounds to exclude from PCA only |
 | `EXCLUSION_RT_MARGIN` | `0.05` | +- window for exclusion list matching |
 | `NORMALIZATION` | `"sum"` | Per-sample signal correction method |
