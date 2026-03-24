@@ -38,6 +38,8 @@ USE_MZ       = False   # if True, also require m/z proximity to merge peaks
                        # recommended for samples with many co-eluting compounds
 MZ_TOLERANCE = 0.005   # Da  - used only when USE_MZ = True
 
+
+
 ALIGN_RT          = True   # apply median RT-shift correction across samples before detection
 MZ_ALIGN_TOLERANCE = 0.1   # Da  - m/z window used during RT alignment
 
@@ -54,7 +56,23 @@ VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 #   3.086,   # Chloroiodomethane
 #   4.044,   # 3-Hexenal
 
-EXCLUSION_LIST = [
+EXCLUSION_LIST = [19.071,
+13.587,
+14.010,
+26.229,
+4.043,
+5.643,
+5.690,
+10.614,
+23.321,
+22.810,
+8.090,
+9.529,
+11.290,
+10.591,
+11.918,
+10.072
+
     # 3.086,
 ]
 
@@ -74,12 +92,12 @@ EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
 #        group but NONE of the other is the most biologically interesting result.
 #        Filtering by overall prevalence would remove exactly those features.
 
-MIN_PREVALENCE_PCA     = 0.5   # e.g. 0.5 = detected in >= 50% of all samples
+MIN_PREVALENCE_PCA     = 0.35   # e.g. 0.5 = detected in >= 50% of all samples
 MIN_PREVALENCE_HCA     = 0.0   # set > 0 to drop sparse features from the heatmap
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
 # --- Blank correction (blank_correction.py) -----------------------------------
-FOLD_CHANGE_THRESHOLD = 3.0
+FOLD_CHANGE_THRESHOLD = 10.0
 # A feature is removed if:
 #   mean(sample areas) / max(blank area)  <  FOLD_CHANGE_THRESHOLD
 # Features absent from blanks are always retained.
@@ -122,7 +140,7 @@ HCA_MAX_FEATURE_LABELS = 50          # label the feature axis when n_features <=
                                      # set to 0 to always hide feature labels
 
 # --- PCA (pca.py) -------------------------------------------------------------
-N_COMPONENTS    = 2   # number of principal components to compute and save
+N_COMPONENTS    = 3   # number of principal components to compute and save
                       # increase to retain more dimensions (e.g. 5 for scree plot)
 
 PCA_PLOT_X      = 1   # PC number to plot on the X axis (1-indexed)
@@ -134,3 +152,5 @@ PCA_TOP_LOADINGS = 10   # number of top-loading features to label in the loading
 PCA_BAR_TOP      = 10   # number of features shown in the loading bar chart (pca_loadings_bar.png)
                         # selected by Euclidean distance in the PC_x/PC_y loading plane;
                         # increase to inspect more candidates (e.g. 20)
+
+

@@ -51,6 +51,7 @@ Usage:
 import math
 import os
 import sys
+import glob
 
 here    = os.path.dirname(os.path.abspath(__file__))
 venv_py = os.path.join(here, ".venv", "bin", "python")
@@ -63,6 +64,80 @@ import pandas as pd
 import config
 
 
+# --- Helper functions --------------------------------------------------------
+
+def find_compound_name(rt, data_dir, matrix, feature_id, rt_tolerance=0.1):
+    """
+    Find compound name in raw data by matching retention time.
+    Uses the peak matrix to identify which samples have the feature,
+    then looks up the compound name from those samples.
+    
+    Parameters
+    ----------
+    rt : float
+        Retention time to match
+    data_dir : str
+        Directory containing raw CSV files
+    matrix : DataFrame
+        Peak matrix to identify which samples have the feature
+    feature_id : str
+        Feature ID to look up in matrix
+    rt_tolerance : float
+        RT window tolerance in minutes
+    
+    Returns
+    -------
+    str or None
+        Compound name if found, else None
+    """
+    if feature_id not in matrix.index:
+        return None
+    
+    # Get samples where this feature was detected
+    feature_row = matrix.loc[feature_id]
+    samples_with_feature = [s for s, area in feature_row.items() if area > 0]
+    
+    if not samples_with_feature:
+        return None
+    
+    # Search for compound in the samples that have this feature
+    best_match = None
+    best_distance = rt_tolerance
+    
+    for sample_name in samples_with_feature:
+        # Construct expected filename
+        for fp in glob.glob(os.path.join(data_dir, "*.csv")):
+            file_stem = os.path.splitext(os.path.basename(fp))[0]
+            
+            if file_stem != sample_name:
+                continue
+            
+            try:
+                df = pd.read_csv(fp, quotechar='"')
+                if "Component Name" not in df.columns or "Retention Time" not in df.columns:
+                    continue
+                
+                # Find the closest RT match in this sample
+                df_filtered = df[
+                    (df["Retention Time"] >= rt - rt_tolerance) &
+                    (df["Retention Time"] <= rt + rt_tolerance)
+                ]
+                
+                if len(df_filtered) > 0:
+                    # Find the row with closest RT
+                    closest_idx = (df_filtered["Retention Time"] - rt).abs().idxmin()
+                    distance = abs(df_filtered.loc[closest_idx, "Retention Time"] - rt)
+                    
+                    if distance < best_distance:
+                        best_distance = distance
+                        best_match = df_filtered.loc[closest_idx, "Component Name"]
+            except Exception:
+                continue
+        
+        if best_match:
+            return best_match
+    
+    return None
 # --- Prevalence filter -------------------------------------------------------
 
 def _prevalence_filter(matrix, min_prevalence):
@@ -89,7 +164,7 @@ def _prevalence_filter(matrix, min_prevalence):
 
 # --- Exclusion list (PCA only) -----------------------------------------------
 
-def _apply_exclusion(matrix, metadata, exclusion_rts, rt_margin):
+def _apply_exclusion(matrix, metadata, exclusion_rts, rt_margin, data_dir=None):
     """
     Remove features whose mean RT falls within +-rt_margin of any RT in
     *exclusion_rts*.  Returns (filtered_matrix, removed_df).
@@ -111,11 +186,29 @@ def _apply_exclusion(matrix, metadata, exclusion_rts, rt_margin):
 
     exclude_idx = list(hit_rt.keys())
     filtered    = matrix.drop(index=exclude_idx)
-    removed     = pd.DataFrame([
-        {"feature_id": fid, "mean_rt": float(rt_lookup[fid]),
-         "matched_exclusion_rt": hit_rt[fid]}
-        for fid in exclude_idx
-    ])
+    
+    removed_list = []
+    for fid in exclude_idx:
+        rt = float(rt_lookup[fid])
+        compound_name = find_compound_name(rt, data_dir, matrix, fid) if data_dir else None
+        
+        # Get samples where feature was detected (non-zero area)
+        if fid in matrix.index:
+            samples_with_feature = matrix.loc[fid]
+            detected_samples = [str(s) for s, area in samples_with_feature.items() if area > 0]
+            samples_str = ";".join(detected_samples)
+        else:
+            samples_str = ""
+        
+        removed_list.append({
+            "feature_id": fid,
+            "compound_name": compound_name if compound_name else "Unknown",
+            "mean_rt": rt,
+            "matched_exclusion_rt": hit_rt[fid],
+            "samples": samples_str
+        })
+    
+    removed = pd.DataFrame(removed_list)
     return filtered, removed
 
 
@@ -274,7 +367,7 @@ def run(cfg=config):
 
     if excl_rts:
         matrix_pca, removed = _apply_exclusion(
-            matrix_pca, metadata, excl_rts, cfg.EXCLUSION_RT_MARGIN
+            matrix_pca, metadata, excl_rts, cfg.EXCLUSION_RT_MARGIN, cfg.DATA_DIR
         )
         print(f"  exclusion list : {len(excl_rts)} RT(s), "
               f"margin +-{cfg.EXCLUSION_RT_MARGIN} min  ->  "

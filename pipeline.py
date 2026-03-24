@@ -41,6 +41,10 @@ import pca as pca_step
 import hca as hca_step
 import volcano as volcano_step
 
+import math
+
+from data_import import _pool_peaks
+
 
 def main():
     print("=" * 62)
