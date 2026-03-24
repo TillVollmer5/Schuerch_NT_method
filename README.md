@@ -100,8 +100,11 @@ output/
 |                                        used by: PCA
 |
 |-- Provenance / audit trail
-|-- feature_metadata.csv                 mean RT, m/z, cluster spread (rt_min/max/std,
+|-- feature_metadata.csv                 mean RT, m/z, compound_name (from most abundant
+|                                        signal), cluster spread (rt_min/max/std,
 |                                        mz_min/max/std), n_samples_detected, n_contributing_peaks
+|-- feature_name_map.csv                 feature_id -> compound_name lookup table
+|                                        (used by PCA / HCA / volcano when FEATURE_LABEL='name')
 |-- feature_peak_log.csv                 one row per raw peak: feature_id, sample (= source file),
 |                                        ref_mz, rt_raw (pre-alignment), rt_aligned, rt_shift,
 |                                        area, selected (True = used in matrix; False = replaced
@@ -166,6 +169,8 @@ output/
 | `HCA_METRIC` | `"euclidean"` | Distance metric for HCA |
 | `HCA_CMAP` | `"vlag"` | Colormap for heatmap (diverging, suited to scaled data) |
 | `HCA_MAX_FEATURE_LABELS` | `50` | Show feature axis labels when n_features <= this |
+| `COMPOUND_NAME_COL` | `"Name"` | Column in TraceFinder CSVs holding compound names; `""` to disable |
+| `FEATURE_LABEL` | `"id"` | `"id"` = use feature_id in plots; `"name"` = use compound name (falls back to feature_id) |
 | `VOLCANO_COMPARISONS` | `"all"` | Group pairs to compare; "all" runs all pairwise |
 | `VOLCANO_FC_THRESHOLD` | `1.0` | log2 fold-change cutoff (1.0 = 2-fold) |
 | `VOLCANO_P_THRESHOLD` | `0.05` | BH-adjusted p-value significance threshold |

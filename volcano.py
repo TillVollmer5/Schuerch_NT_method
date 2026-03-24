@@ -57,6 +57,29 @@ import matplotlib.lines as mlines
 import config
 
 
+# --- Feature label helper -----------------------------------------------------
+
+def _load_feature_labels(cfg):
+    """
+    Load a feature_id -> display label mapping when FEATURE_LABEL = "name".
+
+    Returns an empty dict when FEATURE_LABEL = "id" (the default) or when
+    feature_name_map.csv is not found.  Individual entries fall back to the
+    feature_id when no compound name is available.
+    """
+    if getattr(cfg, "FEATURE_LABEL", "id") != "name":
+        return {}
+    map_path = os.path.join(cfg.OUTPUT_DIR, "feature_name_map.csv")
+    if not os.path.exists(map_path):
+        print("  [info] feature_name_map.csv not found; using feature_id labels")
+        return {}
+    df = pd.read_csv(map_path, index_col="feature_id")
+    if "compound_name" not in df.columns:
+        return {}
+    return {fid: name for fid, name in df["compound_name"].items()
+            if pd.notna(name) and str(name).strip()}
+
+
 # --- Normalization (applied inline, without Pareto scaling) ------------------
 
 def _normalize_log2(matrix, normalization):
@@ -168,7 +191,7 @@ _COL_NS   = "#cccccc"   # grey  - not significant
 
 
 def plot_volcano(results, group_a, group_b, fc_thresh, p_thresh,
-                 top_n, output_path):
+                 top_n, output_path, label_map=None):
     """
     Draw and save a volcano plot.
 
@@ -181,6 +204,8 @@ def plot_volcano(results, group_a, group_b, fc_thresh, p_thresh,
     p_thresh    : float      adjusted p-value threshold
     top_n       : int        number of top significant features to label
     output_path : str
+    label_map   : dict or None  feature_id -> display label (compound name);
+                                None or empty = use feature_id as-is
     """
     x  = results["log2FC"].values
     # clip -log10(0) to a finite ceiling derived from the data
@@ -188,6 +213,9 @@ def plot_volcano(results, group_a, group_b, fc_thresh, p_thresh,
     y          = -np.log10(adj_p)
     directions = results["direction"].values
     feature_ids = results.index.tolist()
+    # display labels: compound name when available, otherwise feature_id
+    labels = ([label_map.get(fid, fid) for fid in feature_ids]
+              if label_map else feature_ids)
 
     colours = np.where(directions == "up_A", _COL_UP_A,
               np.where(directions == "up_B", _COL_UP_B, _COL_NS))
@@ -224,7 +252,7 @@ def plot_volcano(results, group_a, group_b, fc_thresh, p_thresh,
         label_idx  = sig_sorted[:top_n]
         for i in label_idx:
             ax.annotate(
-                feature_ids[i],
+                labels[i],
                 (x[i], y[i]),
                 textcoords="offset points",
                 xytext=(5, 3),
@@ -343,6 +371,7 @@ def run(cfg=config):
         print("  [warning] no valid comparisons to run.")
         return {}
 
+    label_map   = _load_feature_labels(cfg) or None
     results_all = {}
 
     for group_a, group_b in comparisons:
@@ -377,6 +406,7 @@ def run(cfg=config):
             p_thresh     = cfg.VOLCANO_P_THRESHOLD,
             top_n        = cfg.VOLCANO_TOP_LABELS,
             output_path  = out_png,
+            label_map    = label_map,
         )
         print(f"    -> {out_png}")
 

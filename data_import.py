@@ -153,12 +153,12 @@ def align_retention_times(file_dict, mz_tolerance=0.1):
 
 # --- Feature detection --------------------------------------------------------
 
-def _pool_peaks(file_dict, value_col, rt_shifts=None):
+def _pool_peaks(file_dict, value_col, rt_shifts=None, name_col=None):
     """
     Flatten all DataFrames in *file_dict* into a list of peak dicts.
 
     Each dict has keys: sample, rt (aligned), rt_raw (pre-alignment),
-    rt_aligned, rt_shift, mz, area.
+    rt_aligned, rt_shift, mz, area, name.
     Rows with unparseable numeric values are skipped.
 
     Parameters
@@ -167,6 +167,8 @@ def _pool_peaks(file_dict, value_col, rt_shifts=None):
     value_col  : str   column to extract for area
     rt_shifts  : dict  sample_name -> float  (from align_retention_times)
                        If None, all shifts are treated as 0.
+    name_col   : str or None  column to extract compound name from
+                       (e.g. "Name"); None or "" = skip name extraction
     """
     peaks = []
     for sample_name, df in file_dict.items():
@@ -174,6 +176,12 @@ def _pool_peaks(file_dict, value_col, rt_shifts=None):
         for _, row in df.iterrows():
             try:
                 rt_aligned = float(row["Retention Time"])
+                name_val = ""
+                if name_col:
+                    try:
+                        name_val = str(row.get(name_col, "") or "").strip()
+                    except Exception:
+                        pass
                 peaks.append({
                     "sample":     sample_name,
                     "rt":         rt_aligned,          # used for clustering
@@ -182,6 +190,7 @@ def _pool_peaks(file_dict, value_col, rt_shifts=None):
                     "rt_shift":   shift,
                     "mz":         float(row["Reference m/z"]),
                     "area":       float(row.get(value_col, 0) or 0),
+                    "name":       name_val,
                 })
             except (ValueError, TypeError):
                 pass
@@ -264,6 +273,10 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
 
         sample_areas = dict(max_per_sample)   # one area per sample
 
+        # compound name from the peak with the highest area across all samples
+        best_peak     = max(cl, key=lambda p: p.get("area", 0))
+        compound_name = best_peak.get("name", "")
+
         # build peak log - first occurrence of max area is "selected"
         _seen_selected = set()
         peak_log = []
@@ -285,13 +298,14 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
             })
 
         features.append({
-            "feature_id":   fid,
-            "rt":           mean_rt,
-            "mz":           mean_mz,
-            "sample_areas": sample_areas,
-            "peak_log":     peak_log,
-            "rt_values":    [p["rt"]  for p in cl],
-            "mz_values":    [p["mz"]  for p in cl],
+            "feature_id":    fid,
+            "rt":            mean_rt,
+            "mz":            mean_mz,
+            "compound_name": compound_name,
+            "sample_areas":  sample_areas,
+            "peak_log":      peak_log,
+            "rt_values":     [p["rt"]  for p in cl],
+            "mz_values":     [p["mz"]  for p in cl],
         })
 
     return features
@@ -403,7 +417,9 @@ def run(cfg=config):
         shifts_df.to_csv(out_shifts, index=False)
 
     # feature detection from all sample peaks (pass shifts for RT provenance)
-    sample_peaks = _pool_peaks(samples, cfg.VALUE_COL, rt_shifts=sample_shifts)
+    name_col     = getattr(cfg, "COMPOUND_NAME_COL", "Name") or ""
+    sample_peaks = _pool_peaks(samples, cfg.VALUE_COL, rt_shifts=sample_shifts,
+                               name_col=name_col)
     features     = detect_features(
         sample_peaks,
         rt_margin    = cfg.RT_MARGIN,
@@ -446,6 +462,7 @@ def run(cfg=config):
         n_det   = int((matrix.loc[f["feature_id"]] > 0).sum())
         meta_rows.append({
             "feature_id":          f["feature_id"],
+            "compound_name":       f.get("compound_name", ""),
             "mean_rt":             f["rt"],
             "mean_mz":             f["mz"],
             "rt_min":              min(rt_vals),
@@ -464,6 +481,13 @@ def run(cfg=config):
     out_meta = os.path.join(cfg.OUTPUT_DIR, "feature_metadata.csv")
     meta.to_csv(out_meta)
     print(f"  -> {out_meta}  (incl. cluster spread and detection counts)")
+
+    # compound name map - feature_id -> compound_name (for plot labelling)
+    name_map = meta[["compound_name"]].copy()
+    out_name_map = os.path.join(cfg.OUTPUT_DIR, "feature_name_map.csv")
+    name_map.to_csv(out_name_map)
+    n_named = int((name_map["compound_name"].str.strip() != "").sum())
+    print(f"  -> {out_name_map}  ({n_named} features with compound names)")
 
     # --- peak provenance log --------------------------------------------------
     peak_log_rows = []

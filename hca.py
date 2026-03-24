@@ -51,6 +51,29 @@ import seaborn as sns
 import config
 
 
+# --- Feature label helper -----------------------------------------------------
+
+def _load_feature_labels(cfg):
+    """
+    Load a feature_id -> display label mapping when FEATURE_LABEL = "name".
+
+    Returns an empty dict when FEATURE_LABEL = "id" (the default) or when
+    feature_name_map.csv is not found.  Individual entries fall back to the
+    feature_id when no compound name is available.
+    """
+    if getattr(cfg, "FEATURE_LABEL", "id") != "name":
+        return {}
+    map_path = os.path.join(cfg.OUTPUT_DIR, "feature_name_map.csv")
+    if not os.path.exists(map_path):
+        print("  [info] feature_name_map.csv not found; using feature_id labels")
+        return {}
+    df = pd.read_csv(map_path, index_col="feature_id")
+    if "compound_name" not in df.columns:
+        return {}
+    return {fid: name for fid, name in df["compound_name"].items()
+            if pd.notna(name) and str(name).strip()}
+
+
 # --- Colour palette (matches pca.py) -----------------------------------------
 
 _PALETTE = [
@@ -208,10 +231,20 @@ def run(cfg=config):
     print(f"  metric             : {cfg.HCA_METRIC}")
     print(f"  colormap           : {cfg.HCA_CMAP}")
 
+    # build display matrix (compound names when FEATURE_LABEL = "name")
+    label_map = _load_feature_labels(cfg)
+    if label_map:
+        display_matrix = matrix.copy()
+        display_matrix.columns = [label_map.get(fid, fid)
+                                   for fid in matrix.columns]
+        print(f"  feature labels     : compound names  (FEATURE_LABEL='name')")
+    else:
+        display_matrix = matrix
+
     # --- clustered heatmap ----------------------------------------------------
     out_plot = os.path.join(plots_dir, "hca_heatmap.png")
     g = plot_hca(
-        matrix,
+        display_matrix,
         group_series,
         linkage            = cfg.HCA_LINKAGE,
         metric             = cfg.HCA_METRIC,

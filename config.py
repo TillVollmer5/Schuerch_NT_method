@@ -129,6 +129,16 @@ HCA_CMAP              = "vlag"       # diverging colormap suited to mean-centred
 HCA_MAX_FEATURE_LABELS = 50          # label the feature axis when n_features <= this value;
                                      # set to 0 to always hide feature labels
 
+# --- Feature labelling (pca.py, hca.py, volcano.py) --------------------------
+COMPOUND_NAME_COL = "Component Name"   # column in TraceFinder CSVs holding compound names
+                              # set to "" to disable name extraction
+
+FEATURE_LABEL = "id"         # how to label features in plots and axes
+                              # "id"   - use the auto-generated feature_id  (default)
+                              # "name" - use the compound name of the most abundant
+                              #          signal in the cluster; falls back to feature_id
+                              #          when no name is available
+
 # --- PCA (pca.py) -------------------------------------------------------------
 N_COMPONENTS    = 2   # number of principal components to compute and save
                       # increase to retain more dimensions (e.g. 5 for scree plot)
