@@ -148,20 +148,38 @@ def get_top_features(loadings_df, feature_metadata_df, n_features=10):
     return top
 
 
-def run(data_dir=config.DATA_DIR, output_dir=config.OUTPUT_DIR, 
-        n_features=10):
+def run(cfg=None, data_dir=None, output_dir=None, n_features=10):
     """
     Main analysis function.
     
     Parameters
     ----------
-    data_dir : str
-        Directory containing raw sample CSV files
-    output_dir : str
-        Directory for output file
+    cfg : module or None
+        Config module (e.g. import config; run(config)). When provided,
+        data_dir and output_dir are read from it.
+    data_dir : str or None
+        Directory containing raw sample CSV files (overrides cfg).
+    output_dir : str or None
+        Directory for output file (overrides cfg).
     n_features : int
         Number of top features to analyze
     """
+    if cfg is not None and not isinstance(cfg, str):
+        # Called as run(config) from pipeline
+        if data_dir is None:
+            data_dir = cfg.DATA_DIR
+        if output_dir is None:
+            output_dir = cfg.OUTPUT_DIR
+    else:
+        # Called standalone or as run(data_dir, output_dir)
+        if isinstance(cfg, str):
+            # positional: run("path/to/data")
+            data_dir = cfg
+        if data_dir is None:
+            data_dir = config.DATA_DIR
+        if output_dir is None:
+            output_dir = config.OUTPUT_DIR
+
     os.makedirs(output_dir, exist_ok=True)
     
     print("=" * 70)
