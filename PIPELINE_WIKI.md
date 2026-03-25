@@ -275,20 +275,44 @@ co-eluting compounds being merged.
 
 ---
 
-### 2.6 Within-cluster duplicate handling
+### 2.6 Same-sample conflict resolution
 
-The same sample can contribute multiple peaks to one cluster. This happens when
-TraceFinder reports a compound at slightly different RTs within a single injection
-(e.g. due to peak shoulder deconvolution or multiple isotopologues assigned to
-the same nominal RT range). Only one area value per sample can enter the matrix.
+If two peaks from the **same sample** fall within the same RT cluster, they
+cannot represent the same feature — a single injection produces each compound
+exactly once. The cluster must therefore contain at least two chemically distinct
+features and must be split.
 
-**Rule:** Within each cluster, for each sample, the peak with the **highest area**
-is selected. In the case of an exact tie (two peaks with identical area), the
-first one encountered in the sorted list is selected.
+**Algorithm — recursive largest-gap split:**
 
-All peaks — selected and non-selected — are recorded in `feature_peak_log.csv`
-with a boolean `selected` column. This allows full traceability: any discarded
-within-cluster duplicate can be inspected to verify the selection was correct.
+1. Check whether any sample appears more than once in the cluster.
+2. If yes: sort the cluster by RT and find the **largest RT gap** between any
+   two consecutive peaks.
+3. Split the cluster at that gap into two sub-clusters (left and right).
+4. Repeat steps 1–3 on each sub-cluster recursively.
+5. Terminate when every sub-cluster has unique sample membership, or when a
+   sub-cluster contains only one peak (cannot be split further).
+
+**Why split at the largest gap?**
+The underlying assumption of RT clustering is that peaks close in RT belong to
+the same compound. Splitting at the widest gap is therefore the most conservative
+choice: it keeps the most similar peaks together and separates the most
+dissimilar ones. It is the natural inverse of the greedy clustering step.
+
+**Outcome:**
+After conflict resolution, every cluster has at most one peak per sample.
+Every peak is recorded in `feature_peak_log.csv` with `selected = True` — no
+data is discarded. Previously, same-sample duplicates would have their
+lower-area peak silently dropped; now they each become a distinct feature,
+preserving the signal from both compounds.
+
+**Printed output:**
+When splits occur, `data_import.py` reports the number of clusters that were
+split, e.g.:
+```
+same-sample conflict splits : 12 cluster(s) split (peaks from the same sample separated into distinct features)
+```
+A high count suggests a dense chromatogram; consider enabling `USE_MZ = True`
+to also separate co-eluters by m/z before the conflict step.
 
 ---
 
@@ -1075,7 +1099,7 @@ results, but the user should be aware of them when interpreting output.
 |-----------|-----------|------------------------|
 | The same compound elutes within `RT_MARGIN` minutes across all samples after alignment | Feature clustering (§2.4) | Features split across samples are counted as different features; false zero entries in the matrix |
 | Co-eluting compounds at the same m/z are treated as one feature when `USE_MZ = False` | m/z sub-clustering (§2.5) | Isobaric co-eluters are merged; the area reflects the combined signal |
-| The highest-area peak within a cluster is the true signal (not a contaminant) | Duplicate handling (§2.6) | A within-sample contaminant peak with higher area than the analyte would be selected |
+| The largest RT gap between same-sample peaks marks the boundary between two distinct features | Conflict resolution (§2.6) | If two different compounds from the same sample have very similar RTs, the split may not cleanly separate them; enabling `USE_MZ = True` resolves this by adding m/z as a second criterion |
 
 ### Blank correction
 

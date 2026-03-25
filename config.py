@@ -34,7 +34,7 @@ SAMPLE_GROUPS = [
 RT_MARGIN    = 0.05    # minutes  - peaks within this RT window -> same feature
                        # increase for lower RT reproducibility, decrease for dense spectra
 
-USE_MZ       = False   # if True, also require m/z proximity to merge peaks
+USE_MZ       = True   # if True, also require m/z proximity to merge peaks
                        # recommended for samples with many co-eluting compounds
 MZ_TOLERANCE = 0.005   # Da  - used only when USE_MZ = True
 
