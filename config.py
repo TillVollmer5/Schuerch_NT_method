@@ -54,7 +54,22 @@ VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 #   3.086,   # Chloroiodomethane
 #   4.044,   # 3-Hexenal
 
-EXCLUSION_LIST = [
+EXCLUSION_LIST = [19.071,
+13.587,
+14.010,
+26.229,
+4.043,
+5.643,
+5.690,
+10.614,
+23.321,
+22.810,
+8.090,
+9.529,
+11.290,
+10.591,
+11.918,
+10.072
     # 3.086,
 ]
 
@@ -74,18 +89,18 @@ EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
 #        group but NONE of the other is the most biologically interesting result.
 #        Filtering by overall prevalence would remove exactly those features.
 
-MIN_PREVALENCE_PCA     = 0.5   # e.g. 0.5 = detected in >= 50% of all samples
+MIN_PREVALENCE_PCA     = 0.35   # e.g. 0.5 = detected in >= 50% of all samples
 MIN_PREVALENCE_HCA     = 0.0   # set > 0 to drop sparse features from the heatmap
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
 # --- Blank correction (blank_correction.py) -----------------------------------
-FOLD_CHANGE_THRESHOLD = 3.0
+FOLD_CHANGE_THRESHOLD = 10.0
 # A feature is removed if:
 #   mean(sample areas) / max(blank area)  <  FOLD_CHANGE_THRESHOLD
 # Features absent from blanks are always retained.
 # Common values: 3 (lenient) - 10 (strict)
 
-BLANK_USE_MZ       = False   # if True, also require m/z proximity for a blank peak
+BLANK_USE_MZ       = True   # if True, also require m/z proximity for a blank peak
                               # to count as a match against a sample feature.
                               # Without this, a blank peak at the same RT but a
                               # different m/z (a different compound) can cause a
@@ -140,7 +155,7 @@ FEATURE_LABEL = "id"         # how to label features in plots and axes
                               #          when no name is available
 
 # --- PCA (pca.py) -------------------------------------------------------------
-N_COMPONENTS    = 2   # number of principal components to compute and save
+N_COMPONENTS    = 3   # number of principal components to compute and save
                       # increase to retain more dimensions (e.g. 5 for scree plot)
 
 PCA_PLOT_X      = 1   # PC number to plot on the X axis (1-indexed)
