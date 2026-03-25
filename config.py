@@ -89,12 +89,12 @@ EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
 #        group but NONE of the other is the most biologically interesting result.
 #        Filtering by overall prevalence would remove exactly those features.
 
-MIN_PREVALENCE_PCA     = 0.5   # e.g. 0.5 = detected in >= 50% of all samples
+MIN_PREVALENCE_PCA     = 0.35   # e.g. 0.5 = detected in >= 50% of all samples
 MIN_PREVALENCE_HCA     = 0.0   # set > 0 to drop sparse features from the heatmap
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
 # --- Blank correction (blank_correction.py) -----------------------------------
-FOLD_CHANGE_THRESHOLD = 3.0
+FOLD_CHANGE_THRESHOLD = 10.0
 # A feature is removed if:
 #   mean(sample areas) / max(blank area)  <  FOLD_CHANGE_THRESHOLD
 # Features absent from blanks are always retained.
