@@ -13,6 +13,8 @@ data exported from **Thermo TraceFinder** (Orbitrap MS).
 | 4 | `pca.py` | `peak_matrix_processed_pca.csv` -> scores/loadings plots & CSVs |
 | 5 | `hca.py` | `peak_matrix_processed.csv` -> clustered heatmap + dendrogram order CSVs |
 | 6 | `volcano.py` | `peak_matrix_blank_corrected.csv` -> volcano plots & results tables |
+| 7 | `top_features_analysis.py` | `pca_loadings.csv` + raw CSVs -> `top_features_analysis.csv` |
+| 8 | `blank_contaminants_report.py` | `features_removed_blank.csv` + provenance files -> `blank_contaminants_report.csv` |
 
 All outputs are written to the `output/` folder.
 
@@ -86,6 +88,8 @@ python normalization.py      # Step 3 - re-run if NORMALIZATION, SCALING, or EXC
 python pca.py                # Step 4 - re-run if PCA settings change
 python hca.py                # Step 5 - re-run if HCA_LINKAGE or HCA_METRIC changes
 python volcano.py            # Step 6 - re-run if VOLCANO_* thresholds change
+python top_features_analysis.py          # Step 7 - re-run after PCA; optional --n flag
+python blank_contaminants_report.py      # Step 8 - re-run after blank correction
 ```
 
 ## Output files
@@ -133,6 +137,11 @@ output/
 |-- hca_sample_order.csv                 sample dendrogram leaf order
 |-- hca_feature_order.csv               feature dendrogram leaf order
 |-- volcano_<A>_vs_<B>.csv              per-feature log2FC, p-value, adj. p-value
+|-- top_features_analysis.csv            top N features by PCA loading magnitude,
+|                                        with compound name, RT, area per sample,
+|                                        and PC1/PC2(/PC3) loadings
+|-- blank_contaminants_report.csv        blank-removed features with compound name,
+|                                        RT, m/z, max blank area, and sample list
 |-- plots/
     |-- pca_scores.png                   scores scatter plot with group ellipses
     |-- pca_loadings.png                 loadings scatter plot (top features labelled)

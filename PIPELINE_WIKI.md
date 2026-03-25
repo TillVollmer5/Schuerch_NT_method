@@ -45,9 +45,11 @@ and the final plots.
    - 7.3 [Mann-Whitney U test](#73-mann-whitney-u-test)
    - 7.4 [Benjamini-Hochberg FDR correction](#74-benjamini-hochberg-fdr-correction)
    - 7.5 [Classification and thresholds](#75-classification-and-thresholds)
-8. [Feature labelling (compound names)](#8-feature-labelling-compound-names)
-9. [Assumptions summary](#9-assumptions-summary)
-10. [Key parameter reference](#10-key-parameter-reference)
+8. [Report — Blank contaminants](#8-report--blank-contaminants)
+9. [Report — Top PCA features](#9-report--top-pca-features)
+10. [Feature labelling (compound names)](#10-feature-labelling-compound-names)
+11. [Assumptions summary](#11-assumptions-summary)
+12. [Key parameter reference](#12-key-parameter-reference)
 
 ---
 
@@ -97,11 +99,28 @@ Step 3  normalization.py
         |
         +--------> Step 6  volcano.py    -> per-comparison volcano plots
                    (reads blank_corrected matrix directly, re-normalises internally)
+        |
+        v
+Step 7  blank_contaminants_report.py
+        - reads features_removed_blank.csv, feature_name_map.csv,
+          feature_peak_log.csv
+        - lists blank-removed features with compound names, RT, m/z,
+          max blank area, and samples where the feature was detected
+        -> blank_contaminants_report.csv
+        |
+        v
+Step 8  top_features_analysis.py
+        - reads pca_loadings.csv, peak_matrix_raw.csv, feature_metadata.csv,
+          and raw TraceFinder CSVs
+        - extracts top N features by PCA loading magnitude with compound
+          names looked up from raw data by RT matching
+        -> top_features_analysis.csv
 ```
 
 The pipeline is deliberately linear through Steps 1-3 (each step depends on
 the previous), then parallel at Steps 4-6 (independent analyses sharing the
-same processed matrices).
+same processed matrices). Steps 7 and 8 are post-analysis reporting steps
+that depend on the outputs of earlier steps but do not modify any shared files.
 
 ---
 
@@ -1044,7 +1063,107 @@ re-running the analysis.
 
 ---
 
-## 8. Feature labelling (compound names)
+## 8. Report — Blank contaminants
+
+**Script:** `blank_contaminants_report.py`
+**Input:** `features_removed_blank.csv`, `feature_name_map.csv`, `feature_peak_log.csv`
+**Output:** `blank_contaminants_report.csv`
+
+This read-only reporting step produces a human-readable summary of all features
+that were removed by blank correction. It does not modify any existing file.
+
+**Output columns:**
+
+| Column | Source | Description |
+|--------|--------|-------------|
+| `feature_id` | `features_removed_blank.csv` | Feature identifier |
+| `compound_name` | `feature_name_map.csv` | Compound name (empty if unidentified) |
+| `mean_rt` | `features_removed_blank.csv` | Mean aligned RT across samples (3 dp) |
+| `mean_mz` | `features_removed_blank.csv` | Mean reference m/z (3 dp) |
+| `max_blank_area` | `features_removed_blank.csv` | Highest blank area within the RT window (3 dp) |
+| `samples` | `feature_peak_log.csv` | Comma-separated list of samples where the feature was detected |
+
+**Sample verification (RT + m/z double-check):**
+When assembling the sample list, peaks from `feature_peak_log.csv` are only
+accepted if both their `rt_aligned` and `ref_mz` values fall within `RT_MARGIN`
+and `MZ_TOLERANCE` of the feature's mean values. This prevents peaks from a
+different co-eluting feature being incorrectly attributed to the contaminant.
+
+**Why is this useful?**
+The blank-corrected matrix (`peak_matrix_blank_corrected.csv`) simply omits the
+removed features — there is no record of *which* background compound was present
+or in *which* samples it was observed. This report restores that provenance:
+- Siloxanes (column bleed) and solvent contaminants are typical entries.
+- Features removed despite high sample signal (low fold-change due to many
+  zero measurements across samples) are visible here.
+- The compound name column allows rapid assessment of whether the removal is
+  chemically justified.
+
+**Limitation — mean vs detected fold-change:**
+Blank correction uses `mean(all sample areas) / max_blank_area`, where the mean
+includes zero entries for samples where the feature was not detected. A feature
+detected in only one sample with a genuinely high area may still be removed
+if the overall mean (diluted by zeros) falls below the fold-change threshold.
+The `samples` column in this report makes such cases visible.
+
+---
+
+## 9. Report — Top PCA features
+
+**Script:** `top_features_analysis.py`
+**Input:** `pca_loadings.csv`, `peak_matrix_raw.csv`, `feature_metadata.csv`,
+raw TraceFinder CSV files in `DATA/`
+**Output:** `top_features_analysis.csv`
+
+This read-only reporting step identifies the features with the highest influence
+on the PCA result and summarises their peak areas per sample together with
+compound names resolved from the raw data.
+
+**Feature selection — loading magnitude:**
+
+For each feature, the Euclidean magnitude of its loading vector is computed:
+
+$$\text{magnitude}_i = \sqrt{PC1_i^2 + PC2_i^2 (+ PC3_i^2)}$$
+
+PC3 is included only when a third component was computed (`N_COMPONENTS = 3`).
+The top `N` features (default 10, configurable via `--num-features`) with the
+highest magnitude are selected. These are the features that most strongly drive
+sample separation in the PCA scores plot.
+
+**Compound name resolution:**
+For each top feature, the script searches the raw TraceFinder CSV files for
+rows whose `Retention Time` falls within a ±0.1 min window of the feature's
+`mean_rt`. The `Component Name` is read from whichever sample file has the
+best (closest RT) match among samples where the feature was detected. The
+same `skiprows` auto-detection logic used in `data_import.py` is applied so
+that TraceFinder files with an extra metadata header row are handled correctly.
+
+**Output columns:**
+
+| Column | Description |
+|--------|-------------|
+| `feature_id` | Feature identifier |
+| `compound_name` | Name from raw data by RT matching ("Unknown (RT x.xxxx)" if not found) |
+| `RT` | Feature mean retention time |
+| `area` | Raw peak area for this sample |
+| `sample` | Sample name |
+| `PC1` | Feature loading on PC1 |
+| `PC2` | Feature loading on PC2 |
+| `PC3` | Feature loading on PC3 (column absent when `N_COMPONENTS < 3`) |
+
+One row is written per detected sample per feature (only samples where area > 0
+are included). Rows are sorted by loading magnitude (descending) then area
+(descending).
+
+**Standalone usage:**
+```bash
+python top_features_analysis.py          # top 10 features
+python top_features_analysis.py --n 20  # top 20 features
+```
+
+---
+
+## 10. Feature labelling (compound names)
 
 **Config:** `COMPOUND_NAME_COL`, `FEATURE_LABEL`
 
@@ -1078,7 +1197,7 @@ back to `feature_metadata.csv` and `feature_peak_log.csv` unambiguously.
 
 ---
 
-## 9. Assumptions summary
+## 11. Assumptions summary
 
 The following is a consolidated list of the key assumptions embedded in the
 pipeline design. Violating these assumptions does not always produce wrong
@@ -1129,7 +1248,7 @@ results, but the user should be aware of them when interpreting output.
 
 ---
 
-## 10. Key parameter reference
+## 12. Key parameter reference
 
 | Parameter | Default | Step | Description |
 |-----------|---------|------|-------------|
