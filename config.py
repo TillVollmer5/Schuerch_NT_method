@@ -54,7 +54,22 @@ VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 #   3.086,   # Chloroiodomethane
 #   4.044,   # 3-Hexenal
 
-EXCLUSION_LIST = [
+EXCLUSION_LIST = [19.071,
+13.587,
+14.010,
+26.229,
+4.043,
+5.643,
+5.690,
+10.614,
+23.321,
+22.810,
+8.090,
+9.529,
+11.290,
+10.591,
+11.918,
+10.072
     # 3.086,
 ]
 
@@ -140,7 +155,7 @@ FEATURE_LABEL = "id"         # how to label features in plots and axes
                               #          when no name is available
 
 # --- PCA (pca.py) -------------------------------------------------------------
-N_COMPONENTS    = 2   # number of principal components to compute and save
+N_COMPONENTS    = 3   # number of principal components to compute and save
                       # increase to retain more dimensions (e.g. 5 for scree plot)
 
 PCA_PLOT_X      = 1   # PC number to plot on the X axis (1-indexed)
