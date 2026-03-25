@@ -100,7 +100,7 @@ FOLD_CHANGE_THRESHOLD = 10.0
 # Features absent from blanks are always retained.
 # Common values: 3 (lenient) - 10 (strict)
 
-BLANK_USE_MZ       = False   # if True, also require m/z proximity for a blank peak
+BLANK_USE_MZ       = True   # if True, also require m/z proximity for a blank peak
                               # to count as a match against a sample feature.
                               # Without this, a blank peak at the same RT but a
                               # different m/z (a different compound) can cause a
