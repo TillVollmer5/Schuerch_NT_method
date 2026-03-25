@@ -197,6 +197,43 @@ def _pool_peaks(file_dict, value_col, rt_shifts=None, name_col=None):
     return peaks
 
 
+def _split_on_conflict(cluster):
+    """
+    Recursively split *cluster* until no sub-cluster contains two peaks from
+    the same sample.
+
+    Rationale: a single sample injection can only detect each compound once.
+    If two peaks from the same sample fall in the same RT cluster, they must
+    represent two chemically distinct features — the cluster must be split.
+
+    Split criterion: the largest RT gap between consecutive peaks (sorted by
+    RT).  Splitting at the widest gap keeps peaks that are closest in RT
+    together, which is consistent with the RT-similarity assumption that
+    underlies the original greedy clustering.
+
+    Recursion terminates when every sub-cluster has unique sample membership,
+    or when a sub-cluster contains only one peak (cannot be split further).
+
+    Returns a list of sub-clusters (each is a list of peak dicts).
+    """
+    samples = [p["sample"] for p in cluster]
+    if len(samples) == len(set(samples)):
+        return [cluster]          # no conflict — nothing to do
+
+    if len(cluster) <= 1:
+        return [cluster]          # degenerate — cannot split further
+
+    sorted_cl = sorted(cluster, key=lambda p: p["rt"])
+    gaps      = [sorted_cl[i + 1]["rt"] - sorted_cl[i]["rt"]
+                 for i in range(len(sorted_cl) - 1)]
+    split_at  = gaps.index(max(gaps))   # index of peak just before the gap
+
+    left  = sorted_cl[:split_at + 1]
+    right = sorted_cl[split_at + 1:]
+
+    return _split_on_conflict(left) + _split_on_conflict(right)
+
+
 def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
     """
     Cluster peaks from multiple samples into features.
@@ -208,27 +245,31 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
        exceeds the cluster's anchor RT by more than *rt_margin*.
     3. Optional m/z sub-clustering: split each RT cluster by m/z proximity
        (within *mz_tolerance*) to separate co-eluting compounds.
-    4. Within each final cluster, if the same sample appears more than once,
-       keep the peak with the highest area (ties: first occurrence wins).
+    4. Same-sample conflict resolution: if a cluster contains two or more
+       peaks from the same sample, it must contain at least two distinct
+       features.  Split recursively at the largest RT gap until every
+       sub-cluster has unique sample membership.
+    5. Build one feature record per final cluster.  Every peak in each
+       cluster is marked selected=True (no data is discarded).
 
     Feature ID format
     -----------------
     use_mz=False : "RT_{mean_rt:.4f}"
     use_mz=True  : "{mean_mz:.4f}_{mean_rt:.4f}"
 
-    Each feature record includes a *peak_log* list with one entry per raw peak
-    that was assigned to this cluster.  The *selected* field is True for the
-    peak whose area is used in the matrix, False for within-sample duplicates
-    that were replaced by a higher-area peak.
+    Each feature record includes a *peak_log* list with one entry per raw
+    peak assigned to this cluster.  After conflict resolution every peak is
+    selected=True (each sample appears at most once per cluster).
 
     Returns
     -------
-    list of dicts, each with:
-        feature_id, rt, mz, sample_areas (dict),
-        peak_log (list of dicts), rt_values (list), mz_values (list)
+    features    : list of dicts, each with:
+                      feature_id, rt, mz, compound_name, sample_areas (dict),
+                      peak_log (list of dicts), rt_values (list), mz_values (list)
+    n_splits    : int  number of clusters that were split by conflict resolution
     """
     if not peaks:
-        return []
+        return [], 0
 
     sorted_peaks = sorted(peaks, key=lambda x: x["rt"])
 
@@ -257,6 +298,19 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
             sub_clusters.append(sub)
         rt_clusters = sub_clusters
 
+    # -- same-sample conflict resolution --------------------------------------
+    # Two peaks from the same sample cannot be the same feature.  Any cluster
+    # containing a duplicate sample is split at the largest RT gap, recursively,
+    # until all sub-clusters have unique sample membership.
+    n_splits    = 0
+    resolved    = []
+    for cl in rt_clusters:
+        sub = _split_on_conflict(cl)
+        if len(sub) > 1:
+            n_splits += len(sub) - 1
+        resolved.extend(sub)
+    rt_clusters = resolved
+
     # -- build feature records -------------------------------------------------
     features = []
     for cl in rt_clusters:
@@ -264,38 +318,24 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
         mean_mz = sum(p["mz"]  for p in cl) / len(cl)
         fid     = f"{mean_mz:.4f}_{mean_rt:.4f}" if use_mz else f"RT_{mean_rt:.4f}"
 
-        # determine maximum area per sample (for matrix + selection flag)
-        max_per_sample = {}
-        for p in cl:
-            s = p["sample"]
-            if s not in max_per_sample or p["area"] > max_per_sample[s]:
-                max_per_sample[s] = p["area"]
-
-        sample_areas = dict(max_per_sample)   # one area per sample
+        # one peak per sample (guaranteed by conflict resolution)
+        sample_areas = {p["sample"]: p["area"] for p in cl}
 
         # compound name from the peak with the highest area across all samples
         best_peak     = max(cl, key=lambda p: p.get("area", 0))
         compound_name = best_peak.get("name", "")
 
-        # build peak log - first occurrence of max area is "selected"
-        _seen_selected = set()
-        peak_log = []
-        for p in cl:
-            s = p["sample"]
-            is_max      = (p["area"] == max_per_sample[s])
-            is_selected = is_max and (s not in _seen_selected)
-            if is_selected:
-                _seen_selected.add(s)
-            peak_log.append({
-                "feature_id": fid,
-                "sample":     s,
-                "ref_mz":     p["mz"],
-                "rt_raw":     p.get("rt_raw",     p["rt"]),
-                "rt_aligned": p.get("rt_aligned", p["rt"]),
-                "rt_shift":   p.get("rt_shift",   0.0),
-                "area":       p["area"],
-                "selected":   is_selected,
-            })
+        # peak log — every peak is selected (no within-cluster duplicates remain)
+        peak_log = [{
+            "feature_id": fid,
+            "sample":     p["sample"],
+            "ref_mz":     p["mz"],
+            "rt_raw":     p.get("rt_raw",     p["rt"]),
+            "rt_aligned": p.get("rt_aligned", p["rt"]),
+            "rt_shift":   p.get("rt_shift",   0.0),
+            "area":       p["area"],
+            "selected":   True,
+        } for p in cl]
 
         features.append({
             "feature_id":    fid,
@@ -308,7 +348,7 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
             "mz_values":     [p["mz"]  for p in cl],
         })
 
-    return features
+    return features, n_splits
 
 
 # --- Matrix and table construction -------------------------------------------
@@ -420,7 +460,7 @@ def run(cfg=config):
     name_col     = getattr(cfg, "COMPOUND_NAME_COL", "Name") or ""
     sample_peaks = _pool_peaks(samples, cfg.VALUE_COL, rt_shifts=sample_shifts,
                                name_col=name_col)
-    features     = detect_features(
+    features, n_splits = detect_features(
         sample_peaks,
         rt_margin    = cfg.RT_MARGIN,
         use_mz       = cfg.USE_MZ,
@@ -428,6 +468,9 @@ def run(cfg=config):
     )
     print(f"  detected {len(features)} features  "
           f"(RT margin={cfg.RT_MARGIN} min, use_mz={cfg.USE_MZ})")
+    if n_splits > 0:
+        print(f"  same-sample conflict splits : {n_splits} cluster(s) split "
+              f"(peaks from the same sample separated into distinct features)")
 
     # peak matrix (features x all samples, ordered by group then name)
     sample_order = sorted(
