@@ -41,6 +41,7 @@ import pca as pca_step
 import hca as hca_step
 import volcano as volcano_step
 import top_features_analysis as top_features_analysis_step
+import blank_contaminants_report as blank_contaminants_report_step
 
 
 def main():
@@ -70,6 +71,8 @@ def main():
     volcano_step.run(config)
     print()
     top_features_analysis_step.run(config)
+    print()
+    blank_contaminants_report_step.run(config)
 
     print()
     print("=" * 62)
