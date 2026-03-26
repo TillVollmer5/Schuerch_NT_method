@@ -1,40 +1,56 @@
 """
 blank_correction.py - Step 2 of the GCMS processing pipeline.
 
-Removes features whose mean sample area does not exceed the maximum blank
-area by at least FOLD_CHANGE_THRESHOLD.  Features absent from blanks are
-always retained.
+Removes features (or individual sample cells) whose signal does not exceed the
+blank background by at least FOLD_CHANGE_THRESHOLD.  Features absent from all
+blanks are always retained.
+
+Sample-side comparison modes (BLANK_SAMPLE_MODE in config.py)
+-------------------------------------------------------------
+"mean"       - mean area across all samples vs the blank reference (default).
+               Features that fail are removed entirely from the matrix.
+"per_sample" - each sample's area is compared individually.  Failing cells are
+               zeroed in the matrix rather than removing the whole feature row.
+               A feature row is only dropped when every sample cell is zeroed.
+"per_group"  - mean area per SAMPLE_GROUPS group is compared.  Failing groups
+               have all their sample cells zeroed.  Same all-zero -> drop rule.
+
+Blank reference modes (BLANK_REFERENCE_MODE in config.py)
+----------------------------------------------------------
+"max"  - highest blank area across all blank files within the RT window (default).
+"mean" - mean blank area across all blank files (m/z gate applied per blank before
+         averaging; a blank that fails the gate contributes 0 to the mean).
+"each" - each blank file is compared independently; a sample unit fails if its
+         fold change is below FOLD_CHANGE_THRESHOLD for ANY blank file.
 
 Optional m/z gate (BLANK_USE_MZ in config.py)
 ---------------------------------------------
-blank_features.csv stores the m/z of the best RT-matched blank peak alongside
-its area.  When BLANK_USE_MZ = True, a blank peak is only accepted as a match
-if its m/z is also within BLANK_MZ_TOLERANCE Da of the feature's mean_mz.
-Features whose blank peaks fail the m/z check are treated as "not in blank"
-and are therefore never removed by the fold-change filter.
+When enabled, a blank peak is only accepted as a match if its m/z is within
+BLANK_MZ_TOLERANCE Da of the feature's mean_mz.  Blanks that fail the m/z gate
+have their area set to 0, treating the feature as "not found in that blank".
+Gate details are recorded in the audit log (mz_gate_rejected column).
 
-Scientific rationale: without m/z gating, a compound that elutes at the same
-retention time in both the sample and the blank (but is a chemically different
-species with a different mass) would incorrectly trigger removal of a genuine
-sample feature.
+Inputs
+------
+  output/peak_matrix_raw.csv        - features x samples
+  output/blank_per_feature.csv      - per-(feature, blank-file) blank signal
+                                      (written by data_import.py)
+  output/blank_features.csv         - fallback when blank_per_feature.csv absent
+  output/feature_metadata.csv       - mean_rt, mean_mz for each feature
+  output/sample_groups.csv          - sample -> group mapping
 
-Note: the EXCLUSION_LIST (biologically relevant features to withhold from
-PCA) is applied later in normalization.py, after blank correction, so that
-HCA and the volcano plot always operate on the full feature set.
-
-Input  : output/peak_matrix_raw.csv
-         output/blank_features.csv      (max_blank_area, blank_rt, blank_mz)
-         output/feature_metadata.csv    (mean_rt, mean_mz for audit joins
-                                         and the m/z gate when BLANK_USE_MZ=True)
-Output : output/peak_matrix_blank_corrected.csv
-         output/features_removed_blank.csv       (audit log with fold-change detail)
-         output/features_rescued_mz_gate.csv     (only when BLANK_USE_MZ=True and
-                                                   any features were rescued)
+Outputs
+-------
+  output/peak_matrix_blank_corrected.csv   - corrected matrix
+  output/blank_correction_audit.csv        - full per-(feature, sample_unit, blank)
+                                             comparison log with decisions
+  output/features_removed_blank.csv        - backward-compat summary of removed features
 
 Usage:
     python blank_correction.py
 """
 
+import math
 import os
 import sys
 
@@ -48,61 +64,399 @@ import pandas as pd
 import config
 
 
-# --- Core logic ---------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Helper: m/z gate
+# ---------------------------------------------------------------------------
 
-def blank_correction(matrix, blank_series, fold_change_threshold):
+def _apply_mz_gate(blank_df, feat_mz_map, mz_tol):
     """
-    Filter features from *matrix* based on blank signal.
+    Apply the m/z proximity gate to every row of *blank_df*.
 
     Parameters
     ----------
-    matrix                : DataFrame  features x samples
-    blank_series          : Series     feature_id -> max blank area
-                            (already m/z-gated if BLANK_USE_MZ=True, i.e. blank
-                            area set to 0 for m/z-mismatched peaks before calling)
-    fold_change_threshold : float
+    blank_df    : DataFrame with columns feature_id, blank_name,
+                  blank_area, blank_rt, blank_mz
+    feat_mz_map : dict  feature_id -> mean_mz
+    mz_tol      : float  maximum accepted |feature_mz - blank_mz|
+
+    Returns a copy with two new columns added and blank_area zeroed where
+    the gate rejects the match:
+        mz_delta        - |feature_mean_mz - blank_mz| (NaN if blank_mz is NaN)
+        mz_gate_rejected - True where the blank peak was rejected
+    """
+    df = blank_df.copy()
+    feat_mz = df["feature_id"].map(feat_mz_map)
+
+    df["mz_delta"] = (feat_mz - df["blank_mz"]).abs()
+
+    has_area    = df["blank_area"] > 0
+    mz_rejected = has_area & (
+        df["blank_mz"].isna() | (df["mz_delta"] > mz_tol)
+    )
+    df["mz_gate_rejected"] = mz_rejected
+    df.loc[mz_rejected, "blank_area"] = 0.0
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Helper: aggregate blank reference
+# ---------------------------------------------------------------------------
+
+def _aggregate_blank_reference(blank_df, mode):
+    """
+    Collapse the per-file blank table into the reference form required by
+    the chosen BLANK_REFERENCE_MODE.
+
+    Parameters
+    ----------
+    blank_df : DataFrame (already m/z-gated) with columns:
+               feature_id, blank_name, blank_area, blank_rt, blank_mz,
+               mz_delta, mz_gate_rejected
+    mode     : "max" | "mean" | "each"
 
     Returns
     -------
-    filtered   : DataFrame  features that passed the threshold
-    removed_df : DataFrame  audit table for removed features with columns:
-                    feature_id, mean_sample_area, max_blank_area, fold_change
+    DataFrame in the same column format.
+    - "each"       : blank_df unchanged (one row per feature × blank_name)
+    - "max"/"mean" : one row per feature; blank_name set to "BLANK_MAX" or
+                     "BLANK_MEAN"; blank_rt/mz from the highest-area row.
     """
-    # align blank signal to matrix index; features absent from blanks -> 0
-    blank_aligned = blank_series.reindex(matrix.index).fillna(0)
-    in_blank      = blank_aligned > 0
-    mean_area     = matrix.mean(axis=1)
+    if mode == "each":
+        return blank_df.copy()
 
-    # compute fold change only where blank signal exists (avoids divide-by-zero)
-    fold_change = mean_area.where(~in_blank).fillna(
-        mean_area / blank_aligned.where(blank_aligned > 0)
-    )
+    rows = []
+    for fid, grp in blank_df.groupby("feature_id", sort=False):
+        if mode == "max":
+            best = grp.loc[grp["blank_area"].idxmax()]
+            ref_area         = float(best["blank_area"])
+            ref_rt           = best["blank_rt"]
+            ref_mz           = best["blank_mz"]
+            ref_mz_delta     = best["mz_delta"]
+            ref_mz_rejected  = bool(best["mz_gate_rejected"])
+            ref_name         = "BLANK_MAX"
+        else:  # "mean"
+            ref_area = float(grp["blank_area"].mean())
+            # metadata from the blank that had the highest original area
+            best = grp.loc[grp["blank_area"].idxmax()]
+            ref_rt           = best["blank_rt"]
+            ref_mz           = best["blank_mz"]
+            ref_mz_delta     = best["mz_delta"]
+            ref_mz_rejected  = bool(grp["mz_gate_rejected"].any())
+            ref_name         = "BLANK_MEAN"
 
-    # retain feature if it is absent from blanks OR exceeds the fold-change threshold
-    keep     = (~in_blank) | (fold_change >= fold_change_threshold)
-    filtered = matrix.loc[keep]
-    removed  = matrix.index[~keep]
+        rows.append({
+            "feature_id":       fid,
+            "blank_name":       ref_name,
+            "blank_area":       ref_area,
+            "blank_rt":         ref_rt,
+            "blank_mz":         ref_mz,
+            "mz_delta":         ref_mz_delta,
+            "mz_gate_rejected": ref_mz_rejected,
+        })
 
-    removed_df = pd.DataFrame({
-        "feature_id":       removed,
-        "mean_sample_area": mean_area.loc[removed].values,
-        "max_blank_area":   blank_aligned.loc[removed].values,
-        "fold_change":      fold_change.loc[removed].values,
-    })
-
-    return filtered, removed_df
+    return pd.DataFrame(rows)
 
 
-# --- Main ---------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Helper: sample units
+# ---------------------------------------------------------------------------
+
+def _compute_sample_units(matrix, group_map, mode):
+    """
+    Build the list of comparison units for the given BLANK_SAMPLE_MODE.
+
+    Each unit is a dict with keys:
+        sample_unit      : str   label used in the audit log
+        unit_type        : str   "all_mean" | "sample" | "group"
+        group            : str   group name or "-"
+        area_series      : pd.Series indexed by feature_id
+        affected_samples : list[str]  sample columns to zero on failure
+
+    Parameters
+    ----------
+    matrix    : DataFrame  features x samples
+    group_map : dict  sample_name -> group_name
+    mode      : "mean" | "per_sample" | "per_group"
+    """
+    if mode == "mean":
+        return [{
+            "sample_unit":      "ALL_MEAN",
+            "unit_type":        "all_mean",
+            "group":            "-",
+            "area_series":      matrix.mean(axis=1),
+            "affected_samples": list(matrix.columns),
+        }]
+
+    if mode == "per_sample":
+        return [
+            {
+                "sample_unit":      col,
+                "unit_type":        "sample",
+                "group":            group_map.get(col, "unknown"),
+                "area_series":      matrix[col],
+                "affected_samples": [col],
+            }
+            for col in matrix.columns
+        ]
+
+    if mode == "per_group":
+        groups = {}
+        for col in matrix.columns:
+            g = group_map.get(col, "unknown")
+            groups.setdefault(g, []).append(col)
+        return [
+            {
+                "sample_unit":      g,
+                "unit_type":        "group",
+                "group":            g,
+                "area_series":      matrix[cols].mean(axis=1),
+                "affected_samples": cols,
+            }
+            for g, cols in groups.items()
+        ]
+
+    raise ValueError(f"Unknown BLANK_SAMPLE_MODE: {mode!r}")
+
+
+# ---------------------------------------------------------------------------
+# Core: build audit and apply corrections
+# ---------------------------------------------------------------------------
+
+def _build_and_apply(matrix, blank_ref, sample_units, fold_threshold, sample_mode):
+    """
+    For every (feature, sample_unit, blank_reference) combination, compute the
+    fold change, record the decision, and accumulate matrix corrections.
+
+    Decisions
+    ---------
+    "kept"    - fold_change >= fold_threshold, or no blank signal (always kept)
+    "zeroed"  - per_sample or per_group mode: this cell will be zeroed
+    "removed" - all_mean mode: entire feature row will be dropped
+
+    Returns
+    -------
+    corrected_matrix : DataFrame  with corrections applied
+    audit_df         : DataFrame  full audit log
+    removed_fids     : list[str]  feature_ids fully removed from the matrix
+    """
+    # index blank_ref by feature_id for O(1) lookup
+    blank_by_fid = {}
+    for fid, grp in blank_ref.groupby("feature_id", sort=False):
+        blank_by_fid[fid] = grp.to_dict("records")
+
+    audit_rows   = []
+    cells_to_zero = []          # list of (feature_id, sample_col)
+    fids_to_remove = set()      # features removed entirely (all_mean mode)
+
+    for unit in sample_units:
+        su_name          = unit["sample_unit"]
+        su_type          = unit["unit_type"]
+        su_group         = unit["group"]
+        area_series      = unit["area_series"]
+        affected_samples = unit["affected_samples"]
+
+        for fid in matrix.index:
+            sample_area = float(area_series.get(fid, 0.0)
+                                if hasattr(area_series, "get")
+                                else area_series.loc[fid]
+                                if fid in area_series.index else 0.0)
+            if sample_area == 0.0:
+                # cell already absent — skip blank comparison
+                continue
+
+            blank_rows = blank_by_fid.get(fid, [])
+            if not blank_rows:
+                continue  # no blank data at all — always kept, no audit row
+
+            # per-comparison fold changes
+            comparisons = []
+            for br in blank_rows:
+                ba = float(br["blank_area"]) if not _isnan(br.get("blank_area", float("nan"))) else 0.0
+                if ba > 0:
+                    fc           = sample_area / ba
+                    comp_failed  = fc < fold_threshold
+                else:
+                    fc           = float("nan")   # no blank signal → always kept
+                    comp_failed  = False
+
+                comparisons.append({
+                    "blank_name":        br["blank_name"],
+                    "blank_area":        ba,
+                    "blank_rt":          br.get("blank_rt",  float("nan")),
+                    "blank_mz":          br.get("blank_mz",  float("nan")),
+                    "mz_delta":          br.get("mz_delta",  float("nan")),
+                    "mz_gate_rejected":  bool(br.get("mz_gate_rejected", False)),
+                    "fold_change":       fc,
+                    "comparison_failed": comp_failed,
+                })
+
+            # final decision for this (feature, sample_unit)
+            any_failed = any(c["comparison_failed"] for c in comparisons)
+            has_blank  = any(not _isnan(c["fold_change"]) for c in comparisons)
+
+            if not has_blank:
+                final_decision = "kept"
+            elif any_failed:
+                if su_type == "all_mean":
+                    final_decision = "removed"
+                    fids_to_remove.add(fid)
+                else:
+                    final_decision = "zeroed"
+                    for sample in affected_samples:
+                        cells_to_zero.append((fid, sample))
+            else:
+                final_decision = "kept"
+
+            for c in comparisons:
+                audit_rows.append({
+                    "feature_id":        fid,
+                    "sample_unit":       su_name,
+                    "unit_type":         su_type,
+                    "group":             su_group,
+                    "sample_area":       sample_area,
+                    "blank_name":        c["blank_name"],
+                    "blank_area":        c["blank_area"],
+                    "blank_rt":          c["blank_rt"],
+                    "blank_mz":          c["blank_mz"],
+                    "mz_delta":          c["mz_delta"],
+                    "mz_gate_rejected":  c["mz_gate_rejected"],
+                    "fold_change":       c["fold_change"],
+                    "comparison_failed": c["comparison_failed"],
+                    "fold_threshold":    fold_threshold,
+                    "decision":          final_decision,
+                })
+
+    # --- apply corrections to matrix ---
+    mat = matrix.copy()
+
+    if sample_mode == "mean":
+        mat = mat.drop(index=list(fids_to_remove), errors="ignore")
+    else:
+        # zero individual cells
+        for fid, sample in cells_to_zero:
+            if fid in mat.index and sample in mat.columns:
+                mat.loc[fid, sample] = 0.0
+
+        # drop rows where every sample is now 0
+        all_zero = (mat == 0).all(axis=1)
+        newly_removed = list(mat.index[all_zero])
+        mat = mat.loc[~all_zero]
+        fids_to_remove.update(newly_removed)
+
+        # upgrade "zeroed" to "removed" for features that ended up fully dropped
+        if newly_removed and audit_rows:
+            nr_set = set(newly_removed)
+            for row in audit_rows:
+                if row["feature_id"] in nr_set and row["decision"] == "zeroed":
+                    row["decision"] = "removed"
+
+    audit_df = pd.DataFrame(audit_rows)
+    return mat, audit_df, list(fids_to_remove)
+
+
+def _isnan(v):
+    try:
+        return math.isnan(v)
+    except (TypeError, ValueError):
+        return v is None
+
+
+# ---------------------------------------------------------------------------
+# Backward-compat: write features_removed_blank.csv
+# ---------------------------------------------------------------------------
+
+def _write_removed_log(removed_fids, original_matrix, blank_per_file_df,
+                       meta, out_path):
+    """
+    Write features_removed_blank.csv in the same column format as the old
+    pipeline for backward compatibility with any downstream tools.
+
+    Columns: feature_id, mean_rt, mean_mz, mean_sample_area,
+             max_blank_area, fold_change
+    """
+    if not removed_fids:
+        pd.DataFrame(columns=["feature_id", "mean_rt", "mean_mz",
+                               "mean_sample_area", "max_blank_area",
+                               "fold_change"]).to_csv(out_path, index=False)
+        return
+
+    removed_set = set(removed_fids)
+    rows = []
+    max_blank = (blank_per_file_df[blank_per_file_df["feature_id"].isin(removed_set)]
+                 .groupby("feature_id")["blank_area"].max())
+
+    for fid in removed_fids:
+        if fid not in original_matrix.index:
+            continue
+        mean_area = float(original_matrix.loc[fid].mean())
+        mb        = float(max_blank.get(fid, 0.0))
+        fc        = (mean_area / mb) if mb > 0 else float("nan")
+        rows.append({
+            "feature_id":      fid,
+            "mean_sample_area": mean_area,
+            "max_blank_area":  mb,
+            "fold_change":     fc,
+        })
+
+    df = pd.DataFrame(rows).set_index("feature_id")
+    if meta is not None and "mean_rt" in meta.columns and "mean_mz" in meta.columns:
+        df = df.join(meta[["mean_rt", "mean_mz"]], how="left")
+        cols = ["mean_rt", "mean_mz", "mean_sample_area", "max_blank_area", "fold_change"]
+        df = df[[c for c in cols if c in df.columns]]
+
+    df.to_csv(out_path)
+
+
+# ---------------------------------------------------------------------------
+# Fallback: reconstruct blank_per_feature from blank_features.csv
+# ---------------------------------------------------------------------------
+
+def _fallback_blank_per_file(blank_df):
+    """
+    Build a synthetic blank_per_feature DataFrame from the legacy
+    blank_features.csv (single max-area row per feature).
+    Used when blank_per_feature.csv has not yet been generated.
+    """
+    rows = []
+    for fid, row in blank_df.iterrows():
+        rows.append({
+            "feature_id": fid,
+            "blank_name": "BLANK_LEGACY",
+            "blank_area": float(row.get("max_blank_area", 0.0)),
+            "blank_rt":   row.get("blank_rt",  float("nan")),
+            "blank_mz":   row.get("blank_mz",  float("nan")),
+        })
+    return pd.DataFrame(rows, columns=["feature_id", "blank_name",
+                                        "blank_area", "blank_rt", "blank_mz"])
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def run(cfg=config):
     os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 
     print("-- Step 2: blank correction --------------------------------------")
 
-    matrix_path   = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_raw.csv")
-    blank_path    = os.path.join(cfg.OUTPUT_DIR, "blank_features.csv")
-    metadata_path = os.path.join(cfg.OUTPUT_DIR, "feature_metadata.csv")
+    # --- config parameters (with defaults for backward compat) ---
+    sample_mode    = getattr(cfg, "BLANK_SAMPLE_MODE",    "mean")
+    ref_mode       = getattr(cfg, "BLANK_REFERENCE_MODE", "max")
+    use_mz         = getattr(cfg, "BLANK_USE_MZ",         False)
+    mz_tol         = getattr(cfg, "BLANK_MZ_TOLERANCE",   0.005)
+    fold_threshold = cfg.FOLD_CHANGE_THRESHOLD
+
+    print(f"  sample mode   : {sample_mode}")
+    print(f"  blank ref mode: {ref_mode}")
+    print(f"  fold threshold: {fold_threshold}x")
+    print(f"  m/z gate      : {'enabled  (BLANK_MZ_TOLERANCE = ' + str(mz_tol) + ' Da)' if use_mz else 'disabled'}")
+
+    # --- load inputs ---
+    matrix_path       = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_raw.csv")
+    blank_pf_path     = os.path.join(cfg.OUTPUT_DIR, "blank_per_feature.csv")
+    blank_path        = os.path.join(cfg.OUTPUT_DIR, "blank_features.csv")
+    metadata_path     = os.path.join(cfg.OUTPUT_DIR, "feature_metadata.csv")
+    groups_path       = os.path.join(cfg.OUTPUT_DIR, "sample_groups.csv")
 
     for p in (matrix_path, blank_path):
         if not os.path.exists(p):
@@ -111,93 +465,110 @@ def run(cfg=config):
     matrix   = pd.read_csv(matrix_path, index_col="feature_id")
     blank_df = pd.read_csv(blank_path,  index_col="feature_id")
 
-    # blank_series starts as the RT-only matched blank areas
-    blank_series = blank_df["max_blank_area"].copy()
-
     print(f"  input   : {matrix.shape[0]} features x {matrix.shape[1]} samples")
-    print(f"  fold-change threshold : {cfg.FOLD_CHANGE_THRESHOLD}x  "
-          f"({(blank_series > 0).sum()} features with RT-matched blank signal)")
 
-    # --- optional m/z gate ---------------------------------------------------
-    use_mz = getattr(cfg, "BLANK_USE_MZ", False)
-    mz_tol = getattr(cfg, "BLANK_MZ_TOLERANCE", 0.005)
-
-    if use_mz:
-        print(f"  m/z gate              : enabled  (BLANK_MZ_TOLERANCE = {mz_tol} Da)")
-        if "blank_mz" not in blank_df.columns:
-            print("  [warning] blank_features.csv has no 'blank_mz' column - "
-                  "re-run data_import.py to generate it.  m/z gate skipped.")
-        elif not os.path.exists(metadata_path):
-            print("  [warning] feature_metadata.csv not found - m/z gate skipped.")
-        else:
-            meta     = pd.read_csv(metadata_path, index_col="feature_id")
-            feat_mz  = meta["mean_mz"].reindex(blank_df.index)
-            blank_mz = blank_df["blank_mz"].reindex(blank_df.index)
-
-            has_blank   = blank_series > 0
-            mz_ok       = (blank_mz - feat_mz).abs() <= mz_tol
-            # mismatch = has an RT-matched blank peak but m/z is too far away
-            mz_mismatch = has_blank & ~mz_ok.fillna(False)
-            n_rescued   = int(mz_mismatch.sum())
-
-            # zero out blank area for mismatched peaks -> treated as "not in blank"
-            blank_series = blank_series.where(~mz_mismatch, 0.0)
-
-            print(f"  m/z gate rescued      : {n_rescued} feature(s) "
-                  f"(RT-matched blank peak rejected; |Δm/z| > {mz_tol} Da)")
-
-            if n_rescued > 0:
-                rescued_ids = mz_mismatch[mz_mismatch].index
-                rescued_df  = pd.DataFrame({
-                    "feature_id":         rescued_ids,
-                    "mean_mz":            feat_mz.loc[rescued_ids].values,
-                    "blank_mz":           blank_mz.loc[rescued_ids].values,
-                    "mz_delta":           (blank_mz - feat_mz).abs().loc[rescued_ids].values,
-                    "blank_rt":           blank_df["blank_rt"].reindex(rescued_ids).values,
-                    "original_blank_area": blank_df["max_blank_area"].reindex(rescued_ids).values,
-                })
-                # join mean_rt from metadata for context
-                if "mean_rt" in meta.columns:
-                    rescued_df = (rescued_df.set_index("feature_id")
-                                  .join(meta[["mean_rt"]], how="left")
-                                  .reset_index())
-                    cols = ["feature_id", "mean_rt", "mean_mz",
-                            "blank_rt", "blank_mz", "mz_delta", "original_blank_area"]
-                    rescued_df = rescued_df[[c for c in cols if c in rescued_df.columns]]
-
-                out_rescued = os.path.join(cfg.OUTPUT_DIR, "features_rescued_mz_gate.csv")
-                rescued_df.to_csv(out_rescued, index=False)
-                print(f"  -> {out_rescued}  (features retained due to blank m/z mismatch)")
+    # --- blank per-file table ---
+    if os.path.exists(blank_pf_path):
+        blank_per_file = pd.read_csv(blank_pf_path)
     else:
-        print(f"  m/z gate              : disabled  (BLANK_USE_MZ = False)")
+        print("  [warning] blank_per_feature.csv not found - re-run data_import.py "
+              "for full audit capability.  Falling back to blank_features.csv.")
+        blank_per_file = _fallback_blank_per_file(blank_df)
 
-    # --- fold-change filter ---------------------------------------------------
-    filtered, removed_df = blank_correction(
-        matrix, blank_series, cfg.FOLD_CHANGE_THRESHOLD
+    n_blank_files = blank_per_file["blank_name"].nunique()
+    print(f"  blank files   : {n_blank_files} ({', '.join(sorted(blank_per_file['blank_name'].unique()))})")
+
+    # --- feature metadata (needed for m/z gate and audit join) ---
+    meta = None
+    feat_mz_map = {}
+    if os.path.exists(metadata_path):
+        meta = pd.read_csv(metadata_path, index_col="feature_id")
+        feat_mz_map = meta["mean_mz"].to_dict()
+
+    # --- group map (needed for per_group and per_sample audit labels) ---
+    group_map = {}
+    if os.path.exists(groups_path):
+        gdf       = pd.read_csv(groups_path, index_col="sample")
+        group_map = gdf["group"].to_dict()
+
+    # --- apply m/z gate to per-file blank table ---
+    if use_mz and feat_mz_map:
+        blank_per_file = _apply_mz_gate(blank_per_file, feat_mz_map, mz_tol)
+        n_rejected = int(blank_per_file.get("mz_gate_rejected", pd.Series(dtype=bool)).sum())
+        if "mz_gate_rejected" in blank_per_file.columns:
+            n_rejected = int(blank_per_file["mz_gate_rejected"].sum())
+            print(f"  m/z gate      : {n_rejected} (feature, blank) pair(s) rejected "
+                  f"(area zeroed; detail in audit log)")
+    else:
+        if "mz_gate_rejected" not in blank_per_file.columns:
+            blank_per_file["mz_gate_rejected"] = False
+        if "mz_delta" not in blank_per_file.columns:
+            blank_per_file["mz_delta"] = float("nan")
+
+    # --- aggregate blank reference ---
+    blank_ref = _aggregate_blank_reference(blank_per_file, ref_mode)
+
+    # --- sample units ---
+    sample_units = _compute_sample_units(matrix, group_map, sample_mode)
+
+    # --- build audit and apply corrections ---
+    corrected, audit_df, removed_fids = _build_and_apply(
+        matrix, blank_ref, sample_units, fold_threshold, sample_mode
     )
-    print(f"  removed : {len(removed_df)} features  (fold-change filter)")
-    print(f"  retained: {len(filtered)} features")
 
-    if len(removed_df) > 0:
-        # join mean_rt and mean_mz from feature metadata for full context
-        if os.path.exists(metadata_path):
-            meta = pd.read_csv(metadata_path, index_col="feature_id")[["mean_rt", "mean_mz"]]
-            removed_df = (removed_df.set_index("feature_id")
-                          .join(meta, how="left")
-                          .reset_index())
-            cols = ["feature_id", "mean_rt", "mean_mz",
-                    "mean_sample_area", "max_blank_area", "fold_change"]
-            removed_df = removed_df[[c for c in cols if c in removed_df.columns]]
+    # --- join mean_rt / mean_mz from metadata into audit ---
+    if not audit_df.empty and meta is not None:
+        audit_df = audit_df.join(
+            meta[["mean_rt", "mean_mz"]], on="feature_id", how="left"
+        )
+        # reorder columns for readability
+        front = ["feature_id", "mean_rt", "mean_mz",
+                 "sample_unit", "unit_type", "group", "sample_area"]
+        back  = [c for c in audit_df.columns if c not in front]
+        audit_df = audit_df[front + back]
 
-        blank_log = os.path.join(cfg.OUTPUT_DIR, "features_removed_blank.csv")
-        removed_df.to_csv(blank_log, index=False)
-        print(f"  -> {blank_log}  (incl. fold-change detail)")
+    # --- count outcomes ---
+    n_removed = len(removed_fids)
+    n_zeroed_cells = 0
+    if not audit_df.empty and "decision" in audit_df.columns:
+        # unique (feature, sample_unit) pairs that were zeroed (but feature not removed)
+        zeroed_rows = audit_df[audit_df["decision"] == "zeroed"]
+        if not zeroed_rows.empty:
+            n_zeroed_cells = zeroed_rows.drop_duplicates(
+                ["feature_id", "sample_unit"]
+            ).shape[0]
 
+    print(f"  removed : {n_removed} feature(s) fully removed")
+    if n_zeroed_cells:
+        print(f"  zeroed  : {n_zeroed_cells} (feature, sample/group) cell(s) zeroed "
+              f"(feature retained for other samples/groups)")
+    print(f"  retained: {len(corrected)} features")
+
+    # --- write outputs ---
     out_path = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_blank_corrected.csv")
-    filtered.to_csv(out_path)
+    corrected.to_csv(out_path)
     print(f"  -> {out_path}")
 
-    return filtered
+    audit_path = os.path.join(cfg.OUTPUT_DIR, "blank_correction_audit.csv")
+    if not audit_df.empty:
+        audit_df.to_csv(audit_path, index=False)
+    else:
+        # write empty file with correct headers
+        pd.DataFrame(columns=[
+            "feature_id", "mean_rt", "mean_mz",
+            "sample_unit", "unit_type", "group", "sample_area",
+            "blank_name", "blank_area", "blank_rt", "blank_mz",
+            "mz_delta", "mz_gate_rejected",
+            "fold_change", "comparison_failed", "fold_threshold", "decision",
+        ]).to_csv(audit_path, index=False)
+    print(f"  -> {audit_path}  ({len(audit_df)} comparison row(s))")
+
+    removed_log = os.path.join(cfg.OUTPUT_DIR, "features_removed_blank.csv")
+    _write_removed_log(removed_fids, matrix, blank_per_file, meta, removed_log)
+    if removed_fids:
+        print(f"  -> {removed_log}  (backward-compat summary, {len(removed_fids)} feature(s))")
+
+    return corrected
 
 
 if __name__ == "__main__":
