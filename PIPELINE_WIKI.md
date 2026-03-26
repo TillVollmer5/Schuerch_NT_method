@@ -67,7 +67,8 @@ Step 1  data_import.py
         - build blank reference table
         |
         v  peak_matrix_raw.csv
-           blank_features.csv
+           blank_features.csv         (max blank area per feature, backward-compat)
+           blank_per_feature.csv      (per-blank-file signal; enables mean/each modes)
            feature_metadata.csv
            feature_name_map.csv
            feature_peak_log.csv
@@ -76,10 +77,13 @@ Step 1  data_import.py
         |
         v
 Step 2  blank_correction.py
-        - optional m/z gate on blank matching
-        - fold-change filter (sample / blank ratio)
+        - optional m/z gate on blank matching (per blank file)
+        - fold-change filter (configurable sample and blank reference modes)
+        - produces full per-comparison audit log
         |
         v  peak_matrix_blank_corrected.csv
+           blank_correction_audit.csv
+           features_removed_blank.csv (backward-compat summary)
         |
         v
 Step 3  normalization.py
@@ -102,10 +106,9 @@ Step 3  normalization.py
         |
         v
 Step 7  blank_contaminants_report.py
-        - reads features_removed_blank.csv, feature_name_map.csv,
-          feature_peak_log.csv
-        - lists blank-removed features with compound names, RT, m/z,
-          max blank area, and samples where the feature was detected
+        - reads blank_correction_audit.csv, feature_name_map.csv
+        - per-(feature, sample_unit, blank) traceability report:
+          which blank triggered each removal, fold change, m/z delta, etc.
         -> blank_contaminants_report.csv
         |
         v
@@ -424,13 +427,18 @@ alphabetical sort within each group.
 ## 3. Step 2 — Blank correction
 
 **Script:** `blank_correction.py`
-**Input:** `peak_matrix_raw.csv`, `blank_features.csv`, `feature_metadata.csv`
-**Output:** `peak_matrix_blank_corrected.csv`, `features_removed_blank.csv`,
-(optionally) `features_rescued_mz_gate.csv`
+**Input:** `peak_matrix_raw.csv`, `blank_per_feature.csv`, `blank_features.csv`
+(fallback), `feature_metadata.csv`, `sample_groups.csv`
+**Output:** `peak_matrix_blank_corrected.csv`, `blank_correction_audit.csv`,
+`features_removed_blank.csv` (backward-compat summary)
 
-Blank correction removes features that are plausibly explained by background
-matrix signal rather than biological analyte. The background signal is
-characterised by the blank injections built into the analytical sequence.
+Blank correction removes features — or individual sample cells — that are
+plausibly explained by background matrix signal rather than biological analyte.
+The background signal is characterised by the blank injections in the sequence.
+
+Two orthogonal dimensions are configurable: how the **sample signal** is
+represented (`BLANK_SAMPLE_MODE`) and which **blank signal** is used as the
+denominator (`BLANK_REFERENCE_MODE`).
 
 ---
 
@@ -447,16 +455,18 @@ it is not truly present in the blank.
 
 **When `BLANK_USE_MZ = True`:**
 
-For every feature that has an RT-matched blank peak:
+The gate is applied **per blank file** to every row of `blank_per_feature.csv`:
 1. Retrieve `mean_mz` of the sample feature from `feature_metadata.csv`.
-2. Retrieve `blank_mz` of the matched blank peak from `blank_features.csv`.
+2. Retrieve `blank_mz` of the RT-matched blank peak.
 3. If `|mean_mz − blank_mz| > BLANK_MZ_TOLERANCE`:
-   - The blank peak is rejected as a valid match (m/z mismatch implies a
-     different compound).
-   - The blank area for this feature is set to `0` — i.e. the feature is
-     treated as "not found in blank".
-   - The feature is never removed by the fold-change filter.
-   - An entry is written to `features_rescued_mz_gate.csv` for audit.
+   - The blank peak is rejected as a valid match.
+   - That blank file's area for this feature is set to `0`.
+   - The feature is treated as "not found in that blank file".
+
+If a feature's blank area is zeroed in **all** blank files (every blank fails
+the m/z gate), the feature has no valid blank reference and is **always
+retained**.  Full gate details — including `mz_delta` and `mz_gate_rejected`
+— are recorded in `blank_correction_audit.csv` for every comparison.
 
 **Assumption (m/z gate):** Two compounds are chemically distinct if their
 reference m/z values differ by more than `BLANK_MZ_TOLERANCE`. For
@@ -465,40 +475,72 @@ different elemental compositions while tolerating mass measurement error.
 
 ---
 
-### 3.2 Fold-change filter
+### 3.2 Sample-side mode (BLANK_SAMPLE_MODE)
 
-For each sample feature, the filter computes:
+Controls how the sample signal is aggregated for the fold-change comparison.
 
-```
-fold_change = mean(sample areas) / max(blank area)
-```
+| Mode | Behaviour | Removal granularity |
+|------|-----------|---------------------|
+| `"mean"` (default) | Arithmetic mean across **all** samples | Whole feature row removed |
+| `"per_sample"` | Each sample compared individually | Failing **sample cells** are zeroed; row dropped only if all cells fail |
+| `"per_group"` | Mean per `SAMPLE_GROUPS` group | Failing **group's cells** are zeroed; row dropped only if all groups fail |
 
-where `mean(sample areas)` is the arithmetic mean of the feature's area across
-all sample injections (including zeros for samples where the feature was
-undetected), and `max(blank area)` is the highest single blank area within
-the RT (and optionally m/z) window established above.
+**Zero-area skip rule:** If a sample's area is already `0` (feature not
+detected in that injection), the blank comparison for that cell is skipped — an
+absent signal has no fold change and cannot be further removed.
 
-**Decision rule:**
-- Feature has no RT-matched blank peak (or blank area zeroed by m/z gate):
-  **always retained** (no background signal to compare against).
-- Feature has an RT-matched blank peak:
-  - If `fold_change ≥ FOLD_CHANGE_THRESHOLD` → **retained**
-  - If `fold_change < FOLD_CHANGE_THRESHOLD` → **removed**
+---
 
-**Rationale:** A fold-change of 3 means the biological signal is on average 3×
-higher than the background. Common practice in untargeted GC-MS metabolomics is
-to use thresholds of 3 (lenient) to 10 (strict). The choice depends on the
-analyte class, extraction method, and background complexity of the matrix.
+### 3.3 Blank reference mode (BLANK_REFERENCE_MODE)
 
-**What the fold-change does NOT do:**
-- It does not account for within-blank variability (only the *maximum* blank
-  area is used, which is conservative — the worst-case background).
-- It does not test statistical significance. All features above the threshold
-  are retained regardless of sample variance.
+Controls which blank signal is used as the fold-change denominator.
 
-Removed features are logged to `features_removed_blank.csv` including their
-mean sample area, max blank area, and fold-change ratio, along with mean RT
-and mean m/z for identification.
+| Mode | Denominator | Notes |
+|------|-------------|-------|
+| `"max"` (default) | Highest blank area across all blank files | Most conservative aggregate; matches previous pipeline behaviour |
+| `"mean"` | Mean blank area across all blank files | m/z gate applied per file before averaging; a rejected blank contributes 0 to the mean |
+| `"each"` | Each blank file compared independently | A sample unit **fails if it fails against any single blank file** (most conservative individual check) |
+
+**Decision rule (per comparison):**
+- No valid blank area (blank absent or all m/z-rejected): **always retained**.
+- `fold_change ≥ FOLD_CHANGE_THRESHOLD` → **retained**.
+- `fold_change < FOLD_CHANGE_THRESHOLD` → **removed** (mean mode) or
+  **zeroed** (per_sample / per_group mode).
+
+**Rationale:** A fold-change of 3 means the sample signal is on average 3×
+higher than the background. Common practice in untargeted GC-MS metabolomics
+uses thresholds of 3 (lenient) to 10 (strict). The choice depends on analyte
+class, extraction method, and background complexity.
+
+---
+
+### 3.4 Audit log (blank_correction_audit.csv)
+
+Every comparison — one row per (feature, sample_unit, blank_reference) — is
+written to `blank_correction_audit.csv`. This log enables full traceability:
+
+| Column | Description |
+|--------|-------------|
+| `feature_id` | Feature identifier |
+| `mean_rt` | Feature mean RT |
+| `mean_mz` | Feature mean m/z |
+| `sample_unit` | Sample / group / `"ALL_MEAN"` that was compared |
+| `unit_type` | `"sample"` \| `"group"` \| `"all_mean"` |
+| `group` | Group name (or `"-"` for all_mean) |
+| `sample_area` | Signal area for this comparison unit |
+| `blank_name` | Blank file stem, `"BLANK_MAX"`, or `"BLANK_MEAN"` |
+| `blank_area` | Blank area after m/z gate |
+| `blank_rt` | RT of matched blank peak (NaN if no match) |
+| `blank_mz` | m/z of matched blank peak (NaN if no match) |
+| `mz_delta` | `|feature_mean_mz − blank_mz|` |
+| `mz_gate_rejected` | `True` if blank rejected by m/z gate |
+| `fold_change` | `sample_area / blank_area` (NaN = no blank signal) |
+| `comparison_failed` | `True` if this specific comparison was below threshold |
+| `fold_threshold` | `FOLD_CHANGE_THRESHOLD` applied |
+| `decision` | `"kept"` \| `"zeroed"` \| `"removed"` |
+
+`features_removed_blank.csv` is also written for backward compatibility with
+tools that read the old pipeline output format.
 
 ---
 
@@ -1066,45 +1108,58 @@ re-running the analysis.
 ## 8. Report — Blank contaminants
 
 **Script:** `blank_contaminants_report.py`
-**Input:** `features_removed_blank.csv`, `feature_name_map.csv`, `feature_peak_log.csv`
+**Input:** `blank_correction_audit.csv`, `feature_name_map.csv`
 **Output:** `blank_contaminants_report.csv`
 
-This read-only reporting step produces a human-readable summary of all features
-that were removed by blank correction. It does not modify any existing file.
+This read-only reporting step filters the full audit log from Step 2 to show
+only comparisons where a feature was **removed** or a sample cell was
+**zeroed**. Each output row corresponds to one (feature, sample_unit, blank)
+comparison, so every removal decision can be traced back to the exact blank
+file and fold change that triggered it.
 
 **Output columns:**
 
-| Column | Source | Description |
-|--------|--------|-------------|
-| `feature_id` | `features_removed_blank.csv` | Feature identifier |
-| `compound_name` | `feature_name_map.csv` | Compound name (empty if unidentified) |
-| `mean_rt` | `features_removed_blank.csv` | Mean aligned RT across samples (3 dp) |
-| `mean_mz` | `features_removed_blank.csv` | Mean reference m/z (3 dp) |
-| `max_blank_area` | `features_removed_blank.csv` | Highest blank area within the RT window (3 dp) |
-| `samples` | `feature_peak_log.csv` | Comma-separated list of samples where the feature was detected |
+| Column | Description |
+|--------|-------------|
+| `feature_id` | Feature identifier |
+| `compound_name` | Compound name from `feature_name_map.csv` (empty if unknown) |
+| `mean_rt` | Feature mean aligned RT (4 dp) |
+| `mean_mz` | Feature mean reference m/z (4 dp) |
+| `sample_unit` | Sample name / group name / `"ALL_MEAN"` |
+| `unit_type` | `"sample"` \| `"group"` \| `"all_mean"` |
+| `group` | Group the sample_unit belongs to |
+| `sample_area` | Signal area for this comparison unit |
+| `blank_name` | Blank file stem, `"BLANK_MAX"`, or `"BLANK_MEAN"` |
+| `blank_area` | Blank area used (after m/z gate) |
+| `blank_rt` | RT of matched blank peak |
+| `blank_mz` | m/z of matched blank peak |
+| `mz_delta` | `|feature_mean_mz − blank_mz|` |
+| `mz_gate_rejected` | `True` if blank was rejected by the m/z gate |
+| `fold_change` | `sample_area / blank_area` |
+| `comparison_failed` | `True` if this comparison individually was below threshold |
+| `fold_threshold` | `FOLD_CHANGE_THRESHOLD` applied |
+| `decision` | `"removed"` (feature fully dropped) or `"zeroed"` (cell set to 0) |
 
-**Sample verification (RT + m/z double-check):**
-When assembling the sample list, peaks from `feature_peak_log.csv` are only
-accepted if both their `rt_aligned` and `ref_mz` values fall within `RT_MARGIN`
-and `MZ_TOLERANCE` of the feature's mean values. This prevents peaks from a
-different co-eluting feature being incorrectly attributed to the contaminant.
+**How to read the report with `BLANK_REFERENCE_MODE = "each"`:**
+In this mode, one row appears per (feature, sample_unit, blank_file). A
+feature/cell is removed when at least one blank triggers failure.
+`comparison_failed = True` identifies the specific blank(s) responsible.
+
+**Backward compatibility:**
+If `blank_correction_audit.csv` is absent (old pipeline run), the script falls
+back to reading `features_removed_blank.csv` and `feature_peak_log.csv` and
+produces the legacy 6-column format.
 
 **Why is this useful?**
-The blank-corrected matrix (`peak_matrix_blank_corrected.csv`) simply omits the
-removed features — there is no record of *which* background compound was present
-or in *which* samples it was observed. This report restores that provenance:
-- Siloxanes (column bleed) and solvent contaminants are typical entries.
-- Features removed despite high sample signal (low fold-change due to many
-  zero measurements across samples) are visible here.
-- The compound name column allows rapid assessment of whether the removal is
-  chemically justified.
-
-**Limitation — mean vs detected fold-change:**
-Blank correction uses `mean(all sample areas) / max_blank_area`, where the mean
-includes zero entries for samples where the feature was not detected. A feature
-detected in only one sample with a genuinely high area may still be removed
-if the overall mean (diluted by zeros) falls below the fold-change threshold.
-The `samples` column in this report makes such cases visible.
+The blank-corrected matrix simply records zeros for removed features — there is
+no record in the matrix itself of *why* a feature was removed or *which* blank
+triggered it. This report restores full provenance:
+- Siloxanes (column bleed) and solvent peaks are typical removed features.
+- In `per_sample` or `per_group` mode, you can see that a feature was removed
+  from one group's cells but retained for another — revealing group-specific
+  blank contamination.
+- `mz_gate_rejected` rows show where m/z-mismatched blank peaks were
+  discarded, protecting genuine sample metabolites from false removal.
 
 ---
 
@@ -1217,7 +1272,7 @@ results, but the user should be aware of them when interpreting output.
 | Assumption | Where used | Consequence if violated |
 |-----------|-----------|------------------------|
 | The same compound elutes within `RT_MARGIN` minutes across all samples after alignment | Feature clustering (§2.4) | Features split across samples are counted as different features; false zero entries in the matrix |
-| Co-eluting compounds at the same m/z are treated as one feature when `USE_MZ = False` | m/z sub-clustering (§2.5) | Isobaric co-eluters are merged; the area reflects the combined signal |
+| Co-eluting compounds are merged into one feature regardless of their m/z when `USE_MZ = False` | m/z sub-clustering (§2.5) | All co-eluters (including those with different m/z that `USE_MZ = True` would separate) are merged; the area reflects the combined signal |
 | The largest RT gap between same-sample peaks marks the boundary between two distinct features | Conflict resolution (§2.6) | If two different compounds from the same sample have very similar RTs, the split may not cleanly separate them; enabling `USE_MZ = True` resolves this by adding m/z as a second criterion |
 
 ### Blank correction
@@ -1264,6 +1319,8 @@ results, but the user should be aware of them when interpreting output.
 | `FOLD_CHANGE_THRESHOLD` | `3.0` | 2 | Min sample/blank area ratio to retain a feature |
 | `BLANK_USE_MZ` | `False` | 2 | Also gate blank matching by m/z proximity |
 | `BLANK_MZ_TOLERANCE` | `0.005` | 2 | Da — max \|feature_mz − blank_mz\| for blank match |
+| `BLANK_SAMPLE_MODE` | `"mean"` | 2 | `"mean"` \| `"per_sample"` \| `"per_group"` — how to aggregate samples for blank comparison |
+| `BLANK_REFERENCE_MODE` | `"max"` | 2 | `"max"` \| `"mean"` \| `"each"` — which blank signal to use as the fold-change denominator |
 | `MIN_PREVALENCE_PCA` | `0.5` | 3 | Min fraction of samples detecting a feature (for PCA) |
 | `MIN_PREVALENCE_HCA` | `0.0` | 3 | Same filter for HCA (0.0 = disabled) |
 | `MIN_PREVALENCE_VOLCANO` | `0.0` | 3 | Same filter for volcano (keep at 0.0) |

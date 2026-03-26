@@ -8,7 +8,11 @@ and writes the following files to OUTPUT_DIR:
   peak_matrix_raw.csv        - features x samples  (missing values filled with 0)
   feature_metadata.csv       - feature_id, mean_rt, mean_mz, cluster spread stats,
                                n_samples_detected, n_contributing_peaks
-  blank_features.csv         - feature_id, max_blank_area
+  blank_features.csv         - feature_id, max_blank_area, blank_rt, blank_mz
+                               (RT-only matched; one row per feature, max across blanks)
+  blank_per_feature.csv      - feature_id, blank_name, blank_area, blank_rt, blank_mz
+                               (one row per feature x blank-file combination; enables
+                               per-blank reference modes in blank_correction.py)
   feature_peak_log.csv       - full provenance: one row per raw peak,
                                which feature it was assigned to, source sample,
                                ref_mz, rt_raw (pre-alignment), rt_aligned,
@@ -408,6 +412,50 @@ def build_blank_table(features, blank_dict, rt_margin, value_col="Area"):
     return df
 
 
+def build_blank_per_file_table(features, blank_dict, rt_margin, value_col="Area"):
+    """
+    For each (feature, blank_file) pair, find the best RT-matched blank peak
+    and record its area, RT, and m/z.  Uses the same RT-only matching logic as
+    build_blank_table(), applied independently to each blank file.
+
+    This table enables blank_correction.py to:
+      - compute a mean blank reference across files (BLANK_REFERENCE_MODE="mean")
+      - compare against each blank independently (BLANK_REFERENCE_MODE="each")
+      - produce per-blank traceability in the audit log
+
+    Returns
+    -------
+    DataFrame with columns (not indexed):
+        feature_id  - feature identifier
+        blank_name  - stem of the blank file (e.g. "Blank1")
+        blank_area  - highest area within ±rt_margin; 0.0 if no peak found
+        blank_rt    - RT of matched peak; NaN if no match
+        blank_mz    - m/z of matched peak; NaN if no match
+    Total rows = len(features) × len(blank_dict).
+    """
+    rows = []
+    for blank_name, blank_df_raw in blank_dict.items():
+        blank_peaks = _pool_peaks({blank_name: blank_df_raw}, value_col)
+        for feat in features:
+            best_area = 0.0
+            best_mz   = float("nan")
+            best_rt   = float("nan")
+            for bp in blank_peaks:
+                if abs(bp["rt"] - feat["rt"]) <= rt_margin and bp["area"] > best_area:
+                    best_area = bp["area"]
+                    best_mz   = bp["mz"]
+                    best_rt   = bp["rt"]
+            rows.append({
+                "feature_id": feat["feature_id"],
+                "blank_name": blank_name,
+                "blank_area": best_area,
+                "blank_rt":   best_rt,
+                "blank_mz":   best_mz,
+            })
+    return pd.DataFrame(rows, columns=["feature_id", "blank_name",
+                                        "blank_area", "blank_rt", "blank_mz"])
+
+
 # --- Main ---------------------------------------------------------------------
 
 def run(cfg=config):
@@ -557,6 +605,19 @@ def run(cfg=config):
     blank_table.to_csv(out_blank)
     print(f"  -> {out_blank}  "
           f"({(blank_table['max_blank_area'] > 0).sum()} features with blank signal)")
+
+    # per-blank-file blank table (enables mean/each reference modes and full audit)
+    blank_per_file = build_blank_per_file_table(
+        features, blanks,
+        rt_margin = cfg.RT_MARGIN,
+        value_col = cfg.VALUE_COL,
+    )
+    out_blank_per_file = os.path.join(cfg.OUTPUT_DIR, "blank_per_feature.csv")
+    blank_per_file.to_csv(out_blank_per_file, index=False)
+    n_with_signal = int((blank_per_file["blank_area"] > 0).sum())
+    print(f"  -> {out_blank_per_file}  "
+          f"({len(blank_per_file)} rows, {len(blanks)} blank file(s), "
+          f"{n_with_signal} (feature, blank) pairs with signal)")
 
     return matrix, blank_table, group_map
 

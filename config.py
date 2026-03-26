@@ -108,6 +108,22 @@ BLANK_USE_MZ       = True   # if True, also require m/z proximity for a blank pe
 BLANK_MZ_TOLERANCE = 0.005   # Da  - maximum |feature_mz - blank_mz| to accept match
                               # used only when BLANK_USE_MZ = True
 
+BLANK_SAMPLE_MODE = "per_sample"
+# How the sample signal is represented for the fold-change comparison:
+# "mean"       - arithmetic mean across all samples (current/default behaviour)
+# "per_sample" - each sample is compared individually; cells that fail are
+#                zeroed in the matrix rather than removing the whole feature row.
+#                A feature is fully dropped only if every sample cell is zeroed.
+# "per_group"  - mean area per group (from SAMPLE_GROUPS); failing groups have
+#                all their sample cells zeroed. Same all-zero -> drop rule applies.
+
+BLANK_REFERENCE_MODE = "max"
+# Which blank signal is used as the fold-change denominator:
+# "max"  - highest area across all blank files within the RT window (current/default)
+# "mean" - mean area across all blank files (m/z gate applied per blank before averaging)
+# "each" - each blank file is compared independently; a sample/group/mean fails
+#           if its fold change falls below FOLD_CHANGE_THRESHOLD for ANY blank file
+
 # --- Normalization (normalization.py) -----------------------------------------
 NORMALIZATION = "sum"
 # "sum"    - divide each sample by its total signal (scaled to median column sum)
