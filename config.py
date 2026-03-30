@@ -70,7 +70,6 @@ EXCLUSION_LIST = [19.071,
 10.591,
 11.918,
 10.072
-    # 3.086,
 ]
 
 EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
@@ -94,7 +93,7 @@ MIN_PREVALENCE_HCA     = 0.0   # set > 0 to drop sparse features from the heatma
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
 # --- Blank correction (blank_correction.py) -----------------------------------
-FOLD_CHANGE_THRESHOLD = 10.0
+FOLD_CHANGE_THRESHOLD = 3.0
 # A feature is removed if:
 #   mean(sample areas) / max(blank area)  <  FOLD_CHANGE_THRESHOLD
 # Features absent from blanks are always retained.
@@ -180,6 +179,6 @@ PCA_PLOT_Y      = 2   # PC number to plot on the Y axis (1-indexed)
 PCA_ELLIPSE      = True  # draw 95 % confidence ellipses per group (requires scipy)
 PCA_TOP_LOADINGS = 10   # number of top-loading features to label in the loadings scatter plot
                         # set to 0 to skip labels
-PCA_BAR_TOP      = 10   # number of features shown in the loading bar chart (pca_loadings_bar.png)
+PCA_BAR_TOP      = 20   # number of features shown in the loading bar chart (pca_loadings_bar.png)
                         # selected by Euclidean distance in the PC_x/PC_y loading plane;
                         # increase to inspect more candidates (e.g. 20)
