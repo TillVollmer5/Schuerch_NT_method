@@ -232,13 +232,70 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
     if top_n > 0:
         dist    = np.sqrt(lx ** 2 + ly ** 2)
         top_idx = np.argsort(dist)[-top_n:]
-        for i in top_idx:
-            ax.annotate(loadings_df.index[i],
-                        (lx[i], ly[i]),
-                        textcoords="offset points", xytext=(4, 3),
-                        fontsize=6.5, color="#c0392b", zorder=4)
         ax.scatter(lx[top_idx], ly[top_idx], color="#c0392b",
                    s=28, zorder=4, edgecolors="none")
+
+        # sort top features bottom-to-top by y so label order matches point order
+        top_idx = top_idx[np.argsort(ly[top_idx])]
+
+        xlim  = ax.get_xlim()
+        x_off = (xlim[1] - xlim[0]) * 0.05   # small right offset in data coords
+
+        # place all labels at the same y as their point, shifted right
+        texts = []
+        for i in top_idx:
+            t = ax.text(lx[i] + x_off, ly[i], loadings_df.index[i],
+                        fontsize=6.5, color="#c0392b", zorder=5,
+                        va="center", ha="left")
+            texts.append((t, lx[i], ly[i]))
+
+        # render once to measure real text heights in data coordinates
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        inv      = ax.transData.inverted()
+
+        items = []
+        for t, px, py in texts:
+            bb      = t.get_window_extent(renderer=renderer)
+            corners = inv.transform([[bb.x0, bb.y0], [bb.x1, bb.y1]])
+            h       = abs(corners[1, 1] - corners[0, 1])
+            items.append({"t": t, "px": px, "py": py, "ty": py, "h": h})
+
+        # sort bottom-to-top, then push overlapping labels upward
+        items.sort(key=lambda d: d["ty"])
+        for k in range(1, len(items)):
+            min_y = items[k - 1]["ty"] + items[k - 1]["h"] * 1.2
+            if items[k]["ty"] < min_y:
+                items[k]["ty"] = min_y
+
+        # apply nudged y positions
+        for d in items:
+            x_cur, _ = d["t"].get_position()
+            d["t"].set_position((x_cur, d["ty"]))
+
+                # check for right-edge overflow and flip those labels to the left
+        fig.canvas.draw()
+        ax_right_px = ax.transData.transform((ax.get_xlim()[1], 0))[0]
+        for d in items:
+            bb = d["t"].get_window_extent(renderer=renderer)
+            if bb.x1 > ax_right_px:
+                d["t"].set_ha("right")
+                _, y_cur = d["t"].get_position()
+                d["t"].set_position((d["px"] - x_off, y_cur))
+                d["flipped"] = True
+            else:
+                d["flipped"] = False
+
+        # draw connector line from point to nearest edge of label bbox
+        fig.canvas.draw()
+        for d in items:
+            bb = d["t"].get_window_extent(renderer=renderer)
+            if d["flipped"]:
+                lx_l, ly_l = inv.transform((bb.x1, (bb.y0 + bb.y1) / 2))
+            else:
+                lx_l, ly_l = inv.transform((bb.x0, (bb.y0 + bb.y1) / 2))
+            ax.plot([d["px"], lx_l], [d["py"], ly_l],
+                    color="#aaaaaa", lw=0.5, zorder=3)
 
     ax.axhline(0, color="#cccccc", linewidth=0.8, zorder=1)
     ax.axvline(0, color="#cccccc", linewidth=0.8, zorder=1)

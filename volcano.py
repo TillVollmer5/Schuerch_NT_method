@@ -243,23 +243,40 @@ def plot_volcano(results, group_a, group_b, fc_thresh, p_thresh,
     ax.axvline(-fc_thresh, color="#888888", linewidth=0.9,
                linestyle="--", zorder=2)
 
-    # labels for top N significant features
+    # labels for top N significant features – rotated 270°, hanging below point
     sig_mask = directions != "n.s."
     if sig_mask.any() and top_n > 0:
-        sig_idx   = np.where(sig_mask)[0]
-        # sort significant features by adj_pvalue ascending (most significant first)
+        sig_idx    = np.where(sig_mask)[0]
         sig_sorted = sig_idx[np.argsort(adj_p[sig_idx])]
         label_idx  = sig_sorted[:top_n]
+
+        ylim   = ax.get_ylim()
+        y_drop = (ylim[1] - ylim[0]) * 0.04   # vertical offset below point
+        xlim   = ax.get_xlim()
+        x_step = (xlim[1] - xlim[0]) * 0.02  # horizontal nudge per collision
+
+        # sort selected features left-to-right by x position so label order matches
+        label_idx = label_idx[np.argsort(x[label_idx])]
+
+        # initial x placements: same as point x
+        placed = []   # list of (x_label, point_index)
         for i in label_idx:
-            ax.annotate(
-                labels[i],
-                (x[i], y[i]),
-                textcoords="offset points",
-                xytext=(5, 3),
-                fontsize=6,
-                color="#333333",
-                zorder=5,
-            )
+            tx = x[i]
+            # nudge right until no collision with already-placed labels
+            for px, _ in placed:
+                if abs(tx - px) < x_step:
+                    tx = px + x_step
+            placed.append((tx, i))
+
+        for tx, i in placed:
+            ty = y[i] - y_drop
+            # text hangs below ty (va="top" with rotation 270 means text goes down)
+            ax.text(tx, ty, labels[i],
+                    fontsize=6, color="#333333", zorder=5,
+                    rotation=270, ha="center", va="top")
+            # connector line from point to top of label
+            ax.plot([x[i], tx], [y[i], ty],
+                    color="#aaaaaa", lw=0.5, zorder=4)
 
     # counts in legend
     n_up_a = int((directions == "up_A").sum())
@@ -278,7 +295,7 @@ def plot_volcano(results, group_a, group_b, fc_thresh, p_thresh,
                       label=f"n.s.  (n={n_ns})"),
     ]
     ax.legend(handles=legend_handles, fontsize=8, framealpha=0.9,
-              loc="upper left")
+              loc="lower right")
 
     ax.set_xlabel(f"log2 fold change  ({group_a} / {group_b})", fontsize=10)
     ax.set_ylabel("-log10 (adj. p-value)", fontsize=10)
