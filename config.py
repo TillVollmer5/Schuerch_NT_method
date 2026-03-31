@@ -123,6 +123,14 @@ BLANK_REFERENCE_MODE = "max"
 # "each" - each blank file is compared independently; a sample/group/mean fails
 #           if its fold change falls below FOLD_CHANGE_THRESHOLD for ANY blank file
 
+BLANK_EXCLUDE_KEYWORDS = ["silan", "Silan", "Si"]
+# Features whose compound name or molecular formula contains any of these
+# substrings (case-insensitive) are removed after blank correction.
+# Useful for stripping known instrument/column contaminants by name or element.
+# Examples:
+#   BLANK_EXCLUDE_KEYWORDS = ["silan", "Si"]   # removes siloxanes / Si-containing compounds
+#   BLANK_EXCLUDE_KEYWORDS = ["column", "phthalate"]
+
 # --- Normalization (normalization.py) -----------------------------------------
 NORMALIZATION = "sum"
 # "sum"    - divide each sample by its total signal (scaled to median column sum)
