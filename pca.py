@@ -44,6 +44,70 @@ from sklearn.decomposition import PCA
 import config
 
 
+# --- Class annotation helpers -------------------------------------------------
+
+def _load_class_annotation(cfg, feature_ids):
+    """
+    Build two dicts from feature_metadata_enriched.csv based on config:
+
+    highlight_map : feature_id -> hex colour string
+        Populated from CLASS_HIGHLIGHT entries (list of dicts with keys
+        'column', 'value', 'color').  Features matching multiple entries use
+        the last matching color.  Empty dict when CLASS_HIGHLIGHT is empty or
+        the enriched file is absent.
+
+    class_label_map : feature_id -> class string
+        Populated from CLASS_LABEL_COLUMN.  Only entries with a non-NaN value
+        are included.  Empty dict when CLASS_LABEL_COLUMN is "" or file absent.
+
+    Parameters
+    ----------
+    cfg         : config module
+    feature_ids : iterable  all feature_ids present in the loadings DataFrame
+    """
+    highlight_rules = getattr(cfg, "CLASS_HIGHLIGHT", [])
+    label_col       = getattr(cfg, "CLASS_LABEL_COLUMN", "")
+    enriched_path   = os.path.join(cfg.OUTPUT_DIR, "feature_metadata_enriched.csv")
+
+    highlight_map   = {}
+    class_label_map = {}
+
+    if not highlight_rules and not label_col:
+        return highlight_map, class_label_map
+
+    if not os.path.exists(enriched_path):
+        print("  [info] feature_metadata_enriched.csv not found; "
+              "CLASS_HIGHLIGHT and CLASS_LABEL_COLUMN have no effect.")
+        return highlight_map, class_label_map
+
+    enriched = pd.read_csv(enriched_path, index_col="feature_id")
+
+    # build highlight_map
+    for rule in highlight_rules:
+        col   = rule.get("column", "")
+        val   = rule.get("value",  "")
+        color = rule.get("color",  "#e74c3c")
+        if col not in enriched.columns:
+            print(f"  [info] CLASS_HIGHLIGHT column '{col}' not in enriched metadata; skipped.")
+            continue
+        for fid in feature_ids:
+            if fid in enriched.index and enriched.loc[fid, col] == val:
+                highlight_map[fid] = color
+
+    # build class_label_map
+    if label_col:
+        if label_col not in enriched.columns:
+            print(f"  [info] CLASS_LABEL_COLUMN '{label_col}' not in enriched metadata; skipped.")
+        else:
+            for fid in feature_ids:
+                if fid in enriched.index:
+                    v = enriched.loc[fid, label_col]
+                    if pd.notna(v) and str(v).strip():
+                        class_label_map[fid] = str(v).strip()
+
+    return highlight_map, class_label_map
+
+
 # --- Feature label helper -----------------------------------------------------
 
 def _load_feature_labels(cfg):
@@ -202,7 +266,8 @@ def plot_scores(scores_df, group_series, variance_df, pc_x, pc_y,
 
 
 def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
-                  output_path, top_n=10):
+                  output_path, top_n=10,
+                  highlight_map=None, class_label_map=None):
     """
     Scatter plot of feature loadings.
     The *top_n* features with the largest Euclidean distance from the origin
@@ -210,23 +275,57 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
 
     Parameters
     ----------
-    loadings_df : DataFrame  features x PCs
-    variance_df : DataFrame  from fit_pca
-    pc_x, pc_y  : int        1-indexed PC numbers for the axes
-    output_path : str
-    top_n       : int        number of features to label (0 = none)
+    loadings_df     : DataFrame  features x PCs
+    variance_df     : DataFrame  from fit_pca
+    pc_x, pc_y      : int        1-indexed PC numbers for the axes
+    output_path     : str
+    top_n           : int        number of features to label (0 = none)
+    highlight_map   : dict or None  feature_id -> hex color; highlighted dots
+                                    are drawn in their assigned color instead
+                                    of the default grey
+    class_label_map : dict or None  feature_id -> class string; when present,
+                                    "[class]" is appended to the feature label
     """
     col_x  = f"PC{pc_x}"
     col_y  = f"PC{pc_y}"
     pct_x  = variance_df.loc[col_x, "explained_variance_ratio"] * 100
     pct_y  = variance_df.loc[col_y, "explained_variance_ratio"] * 100
 
-    lx = loadings_df[col_x].values
-    ly = loadings_df[col_y].values
+    lx  = loadings_df[col_x].values
+    ly  = loadings_df[col_y].values
+    ids = loadings_df.index.tolist()
+
+    highlight_map   = highlight_map   or {}
+    class_label_map = class_label_map or {}
 
     fig, ax = plt.subplots(figsize=(6, 5))
-    ax.scatter(lx, ly, color="#555555", s=18, alpha=0.55, zorder=3,
-               edgecolors="none")
+
+    # draw background (non-highlighted) dots
+    # split into highlighted and non-highlighted for correct z-ordering
+    hi_idx = [i for i, fid in enumerate(ids) if fid in highlight_map]
+    bg_idx = [i for i, fid in enumerate(ids) if fid not in highlight_map]
+
+    if bg_idx:
+        ax.scatter(lx[bg_idx], ly[bg_idx], color="#555555", s=18,
+                   alpha=0.55, zorder=3, edgecolors="none")
+    for i in hi_idx:
+        ax.scatter(lx[i], ly[i], color=highlight_map[ids[i]], s=28,
+                   alpha=0.85, zorder=4, edgecolors="none")
+
+    # build legend entries for highlighted classes
+    if highlight_map:
+        from matplotlib.lines import Line2D
+        seen = {}
+        for fid, col in highlight_map.items():
+            # use the class value as legend label if available
+            lbl = class_label_map.get(fid, fid)
+            # group by color
+            seen.setdefault(col, lbl)
+        handles = [Line2D([], [], marker="o", color="w",
+                          markerfacecolor=col, markersize=7, label=lbl)
+                   for col, lbl in seen.items()]
+        ax.legend(handles=handles, fontsize=7.5, framealpha=0.9,
+                  title="Highlighted", title_fontsize=8, loc="upper left")
 
     # label top features by distance from origin
     if top_n > 0:
@@ -244,7 +343,11 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
         # place all labels at the same y as their point, shifted right
         texts = []
         for i in top_idx:
-            t = ax.text(lx[i] + x_off, ly[i], loadings_df.index[i],
+            fid   = loadings_df.index[i]
+            label = str(fid)
+            if fid in class_label_map:
+                label = f"{label} [{class_label_map[fid]}]"
+            t = ax.text(lx[i] + x_off, ly[i], label,
                         fontsize=6.5, color="#c0392b", zorder=5,
                         va="center", ha="left")
             texts.append((t, lx[i], ly[i]))
@@ -312,7 +415,8 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
 # --- Loading bar chart -------------------------------------------------------
 
 def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
-                      output_path, top_n=10):
+                      output_path, top_n=10,
+                      highlight_map=None, class_label_map=None):
     """
     Grouped horizontal bar chart showing the top *top_n* features by
     Euclidean distance from the origin in the PC_x / PC_y loading plane.
@@ -326,11 +430,15 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
 
     Parameters
     ----------
-    loadings_df : DataFrame  features x PCs
-    variance_df : DataFrame  from fit_pca
-    pc_x, pc_y  : int        1-indexed PC numbers (matching PCA_PLOT_X/Y)
-    output_path : str
-    top_n       : int        number of features to show (config: PCA_BAR_TOP)
+    loadings_df     : DataFrame  features x PCs
+    variance_df     : DataFrame  from fit_pca
+    pc_x, pc_y      : int        1-indexed PC numbers (matching PCA_PLOT_X/Y)
+    output_path     : str
+    top_n           : int        number of features to show (config: PCA_BAR_TOP)
+    highlight_map   : dict or None  feature_id -> hex color; y-tick labels for
+                                    highlighted features are drawn in that color
+    class_label_map : dict or None  feature_id -> class string; appended as
+                                    "[class]" to y-tick labels
     """
     col_x = f"PC{pc_x}"
     col_y = f"PC{pc_y}"
@@ -341,14 +449,24 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
     ly   = loadings_df[col_y].values
     dist = np.sqrt(lx ** 2 + ly ** 2)
 
+    highlight_map   = highlight_map   or {}
+    class_label_map = class_label_map or {}
+
     # select top_n by distance, then sort by PC_x loading for display
     top_n    = min(top_n, len(loadings_df))
     top_idx  = np.argsort(dist)[-top_n:]
     top_idx  = top_idx[np.argsort(lx[top_idx])]   # sort ascending by PC_x
 
-    feat_labels = [loadings_df.index[i] for i in top_idx]
-    vals_x      = lx[top_idx]
-    vals_y      = ly[top_idx]
+    feat_ids    = [loadings_df.index[i] for i in top_idx]
+    feat_labels = []
+    for fid in feat_ids:
+        lbl = str(fid)
+        if fid in class_label_map:
+            lbl = f"{lbl} [{class_label_map[fid]}]"
+        feat_labels.append(lbl)
+
+    vals_x = lx[top_idx]
+    vals_y = ly[top_idx]
 
     # layout: one bar group per feature, two bars per group
     y_pos   = np.arange(top_n)
@@ -381,6 +499,12 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
     ax.axvline(0, color="#888888", linewidth=0.9, zorder=2)
     ax.set_yticks(y_pos)
     ax.set_yticklabels(feat_labels, fontsize=8)
+
+    # color y-tick labels for highlighted features
+    for tick, fid in zip(ax.get_yticklabels(), feat_ids):
+        if fid in highlight_map:
+            tick.set_color(highlight_map[fid])
+
     ax.set_xlabel("Loading value", fontsize=10)
     ax.set_title(
         f"Top {top_n} features by loading magnitude\n"
@@ -581,6 +705,18 @@ def run(cfg=config):
     else:
         display_loadings = loadings_df
 
+    # load class annotation (highlight colors + class label suffixes)
+    # Always uses original feature_ids (before label_map renaming) for lookup
+    highlight_map, class_label_map = _load_class_annotation(cfg, loadings_df.index)
+    # remap keys to display labels when label_map is active
+    if label_map:
+        highlight_map   = {label_map.get(k, k): v for k, v in highlight_map.items()}
+        class_label_map = {label_map.get(k, k): v for k, v in class_label_map.items()}
+    if highlight_map:
+        print(f"  class highlight    : {len(highlight_map)} feature(s) highlighted")
+    if class_label_map:
+        print(f"  class labels       : {len(class_label_map)} feature(s) have class suffix")
+
     # validate requested PC axes
     pc_x, pc_y = cfg.PCA_PLOT_X, cfg.PCA_PLOT_Y
     if max(pc_x, pc_y) > n:
@@ -600,14 +736,18 @@ def run(cfg=config):
     out_plot_loadings = os.path.join(plots_dir, "pca_loadings.png")
     plot_loadings(display_loadings, variance_df,
                   pc_x, pc_y, out_plot_loadings,
-                  top_n=cfg.PCA_TOP_LOADINGS)
+                  top_n=cfg.PCA_TOP_LOADINGS,
+                  highlight_map=highlight_map,
+                  class_label_map=class_label_map)
     print(f"  -> {out_plot_loadings}")
 
     # loading bar chart (always produced)
     out_bar = os.path.join(plots_dir, "pca_loadings_bar.png")
     plot_loadings_bar(display_loadings, variance_df,
                       pc_x, pc_y, out_bar,
-                      top_n=cfg.PCA_BAR_TOP)
+                      top_n=cfg.PCA_BAR_TOP,
+                      highlight_map=highlight_map,
+                      class_label_map=class_label_map)
     print(f"  -> {out_bar}")
 
     # 3D interactive plots (only when exactly 3 components are computed)
