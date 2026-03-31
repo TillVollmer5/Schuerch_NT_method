@@ -57,6 +57,48 @@ import matplotlib.lines as mlines
 import config
 
 
+# --- Class annotation helper --------------------------------------------------
+
+def _load_class_annotation(cfg, feature_ids):
+    """
+    Build highlight_map and class_label_map from feature_metadata_enriched.csv.
+    See pca.py for full documentation — this is an identical copy used here
+    to avoid a cross-script import dependency.
+    """
+    highlight_rules = getattr(cfg, "CLASS_HIGHLIGHT", [])
+    label_col       = getattr(cfg, "CLASS_LABEL_COLUMN", "")
+    enriched_path   = os.path.join(cfg.OUTPUT_DIR, "feature_metadata_enriched.csv")
+
+    highlight_map   = {}
+    class_label_map = {}
+
+    if not highlight_rules and not label_col:
+        return highlight_map, class_label_map
+    if not os.path.exists(enriched_path):
+        return highlight_map, class_label_map
+
+    enriched = pd.read_csv(enriched_path, index_col="feature_id")
+
+    for rule in highlight_rules:
+        col   = rule.get("column", "")
+        val   = rule.get("value",  "")
+        color = rule.get("color",  "#e74c3c")
+        if col not in enriched.columns:
+            continue
+        for fid in feature_ids:
+            if fid in enriched.index and enriched.loc[fid, col] == val:
+                highlight_map[fid] = color
+
+    if label_col and label_col in enriched.columns:
+        for fid in feature_ids:
+            if fid in enriched.index:
+                v = enriched.loc[fid, label_col]
+                if pd.notna(v) and str(v).strip():
+                    class_label_map[fid] = str(v).strip()
+
+    return highlight_map, class_label_map
+
+
 # --- Feature label helper -----------------------------------------------------
 
 def _load_feature_labels(cfg):
@@ -191,22 +233,29 @@ _COL_NS   = "#cccccc"   # grey  - not significant
 
 
 def plot_volcano(results, group_a, group_b, fc_thresh, p_thresh,
-                 top_n, output_path, label_map=None):
+                 top_n, output_path, label_map=None,
+                 highlight_map=None, class_label_map=None):
     """
     Draw and save a volcano plot.
 
     Parameters
     ----------
-    results     : DataFrame  from classify(), indexed by feature_id
-    group_a     : str        name of group A (positive log2FC direction)
-    group_b     : str        name of group B
-    fc_thresh   : float      log2 fold-change threshold
-    p_thresh    : float      adjusted p-value threshold
-    top_n       : int        number of top significant features to label
-    output_path : str
-    label_map   : dict or None  feature_id -> display label (compound name);
-                                None or empty = use feature_id as-is
+    results         : DataFrame  from classify(), indexed by feature_id
+    group_a         : str        name of group A (positive log2FC direction)
+    group_b         : str        name of group B
+    fc_thresh       : float      log2 fold-change threshold
+    p_thresh        : float      adjusted p-value threshold
+    top_n           : int        number of top significant features to label
+    output_path     : str
+    label_map       : dict or None  feature_id -> display label (compound name)
+    highlight_map   : dict or None  feature_id -> hex color; significant dots
+                                    matching a rule get a colored ring outline
+    class_label_map : dict or None  feature_id -> class string; appended as
+                                    "[class]" to significant feature labels
     """
+    highlight_map   = highlight_map   or {}
+    class_label_map = class_label_map or {}
+
     x  = results["log2FC"].values
     # clip -log10(0) to a finite ceiling derived from the data
     adj_p      = results["adj_pvalue"].values.clip(1e-300, 1.0)
@@ -215,12 +264,14 @@ def plot_volcano(results, group_a, group_b, fc_thresh, p_thresh,
     feature_ids = results.index.tolist()
     # display labels: compound name when available, otherwise feature_id
     labels = ([label_map.get(fid, fid) for fid in feature_ids]
-              if label_map else feature_ids)
+              if label_map else list(feature_ids))
 
-    colours = np.where(directions == "up_A", _COL_UP_A,
-              np.where(directions == "up_B", _COL_UP_B, _COL_NS))
-    sizes   = np.where(directions == "n.s.", 18, 28)
-    zorders = np.where(directions == "n.s.", 1, 3)
+    # append class suffix to labels where available
+    if class_label_map:
+        labels = [
+            f"{lbl} [{class_label_map[fid]}]" if fid in class_label_map else lbl
+            for lbl, fid in zip(labels, feature_ids)
+        ]
 
     fig, ax = plt.subplots(figsize=(6.5, 5.5))
 
@@ -233,6 +284,15 @@ def plot_volcano(results, group_a, group_b, fc_thresh, p_thresh,
         mask = directions == direction
         ax.scatter(x[mask], y[mask], c=col, s=sz, zorder=zo,
                    alpha=0.75, edgecolors="none")
+
+    # colored ring outline on highlighted significant dots
+    if highlight_map:
+        for i, fid in enumerate(feature_ids):
+            if fid in highlight_map and directions[i] != "n.s.":
+                ax.scatter(x[i], y[i], s=60, zorder=5,
+                           facecolors="none",
+                           edgecolors=highlight_map[fid],
+                           linewidths=1.5)
 
     # threshold lines
     y_line = -np.log10(p_thresh)
@@ -389,6 +449,14 @@ def run(cfg=config):
         return {}
 
     label_map   = _load_feature_labels(cfg) or None
+
+    # class annotation (highlight + class label suffixes) — built once for all comparisons
+    highlight_map, class_label_map = _load_class_annotation(cfg, matrix.index)
+    if highlight_map:
+        print(f"  class highlight    : {len(highlight_map)} feature(s) highlighted")
+    if class_label_map:
+        print(f"  class labels       : {len(class_label_map)} feature(s) have class suffix")
+
     results_all = {}
 
     for group_a, group_b in comparisons:
@@ -417,13 +485,15 @@ def run(cfg=config):
         out_png = os.path.join(plots_dir, f"volcano_{tag}.png")
         plot_volcano(
             results,
-            group_a      = group_a,
-            group_b      = group_b,
-            fc_thresh    = cfg.VOLCANO_FC_THRESHOLD,
-            p_thresh     = cfg.VOLCANO_P_THRESHOLD,
-            top_n        = cfg.VOLCANO_TOP_LABELS,
-            output_path  = out_png,
-            label_map    = label_map,
+            group_a         = group_a,
+            group_b         = group_b,
+            fc_thresh       = cfg.VOLCANO_FC_THRESHOLD,
+            p_thresh        = cfg.VOLCANO_P_THRESHOLD,
+            top_n           = cfg.VOLCANO_TOP_LABELS,
+            output_path     = out_png,
+            label_map       = label_map,
+            highlight_map   = highlight_map   or None,
+            class_label_map = class_label_map or None,
         )
         print(f"    -> {out_png}")
 

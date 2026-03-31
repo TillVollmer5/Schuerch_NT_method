@@ -28,7 +28,16 @@ and the final plots.
    - 4.2 [Bin alignment and x-axis scaling](#42-bin-alignment-and-x-axis-scaling)
    - 4.3 [Threshold reference lines](#43-threshold-reference-lines)
    - 4.4 [Outputs](#44-outputs)
-5. [Step 3 — Normalization, transformation, and scaling](#5-step-3--normalization-transformation-and-scaling)
+5. [Step 2c — Compound classification](#5-step-2c--compound-classification)
+   - 5.1 [Overview and API endpoints](#51-overview-and-api-endpoints)
+   - 5.2 [Caching strategy](#52-caching-strategy)
+   - 5.3 [Rate limiting and compliance](#53-rate-limiting-and-compliance)
+   - 5.4 [Name filtering](#54-name-filtering)
+   - 5.5 [ClassyFire taxonomy](#55-classyfire-taxonomy)
+   - 5.6 [NPClassifier annotations](#56-npclassifier-annotations)
+   - 5.7 [Output columns and classification status](#57-output-columns-and-classification-status)
+   - 5.8 [Assumptions and limitations](#58-assumptions-and-limitations)
+6. [Step 3 — Normalization, transformation, and scaling](#6-step-3--normalization-transformation-and-scaling)
    - 4.1 [Prevalence filter](#41-prevalence-filter)
    - 4.2 [Exclusion list (PCA matrix only)](#42-exclusion-list-pca-matrix-only)
    - 4.3 [Sum normalization](#43-sum-normalization)
@@ -37,24 +46,24 @@ and the final plots.
    - 4.6 [Pareto scaling (recommended)](#46-pareto-scaling-recommended)
    - 4.7 [Auto scaling (alternative)](#47-auto-scaling-alternative)
    - 4.8 [Two output matrices](#48-two-output-matrices)
-6. [Step 4 — Principal Component Analysis (PCA)](#6-step-4--principal-component-analysis-pca)
-   - 6.1 [Algorithm](#61-algorithm)
-   - 6.2 [Scores plot and confidence ellipses](#62-scores-plot-and-confidence-ellipses)
-   - 6.3 [Loadings plot and bar chart](#63-loadings-plot-and-bar-chart)
-7. [Step 5 — Hierarchical Cluster Analysis (HCA)](#7-step-5--hierarchical-cluster-analysis-hca)
-   - 7.1 [Algorithm and linkage](#71-algorithm-and-linkage)
-   - 7.2 [Heatmap construction](#72-heatmap-construction)
-8. [Step 6 — Volcano plot](#8-step-6--volcano-plot)
-   - 8.1 [Normalization for volcano (no Pareto scaling)](#81-normalization-for-volcano-no-pareto-scaling)
-   - 8.2 [Log2 fold change](#82-log2-fold-change)
-   - 8.3 [Mann-Whitney U test](#83-mann-whitney-u-test)
-   - 8.4 [Benjamini-Hochberg FDR correction](#84-benjamini-hochberg-fdr-correction)
-   - 8.5 [Classification and thresholds](#85-classification-and-thresholds)
-9. [Report — Blank contaminants](#9-report--blank-contaminants)
-10. [Report — Top PCA features](#10-report--top-pca-features)
-11. [Feature labelling (compound names)](#11-feature-labelling-compound-names)
-12. [Assumptions summary](#12-assumptions-summary)
-13. [Key parameter reference](#13-key-parameter-reference)
+7. [Step 4 — Principal Component Analysis (PCA)](#7-step-4--principal-component-analysis-pca)
+   - 7.1 [Algorithm](#71-algorithm)
+   - 7.2 [Scores plot and confidence ellipses](#72-scores-plot-and-confidence-ellipses)
+   - 7.3 [Loadings plot and bar chart](#73-loadings-plot-and-bar-chart)
+8. [Step 5 — Hierarchical Cluster Analysis (HCA)](#8-step-5--hierarchical-cluster-analysis-hca)
+   - 8.1 [Algorithm and linkage](#81-algorithm-and-linkage)
+   - 8.2 [Heatmap construction](#82-heatmap-construction)
+9. [Step 6 — Volcano plot](#9-step-6--volcano-plot)
+   - 9.1 [Normalization for volcano (no Pareto scaling)](#91-normalization-for-volcano-no-pareto-scaling)
+   - 9.2 [Log2 fold change](#92-log2-fold-change)
+   - 9.3 [Mann-Whitney U test](#93-mann-whitney-u-test)
+   - 9.4 [Benjamini-Hochberg FDR correction](#94-benjamini-hochberg-fdr-correction)
+   - 9.5 [Classification and thresholds](#95-classification-and-thresholds)
+10. [Report — Blank contaminants](#10-report--blank-contaminants)
+11. [Report — Top PCA features](#11-report--top-pca-features)
+12. [Feature labelling (compound names)](#12-feature-labelling-compound-names)
+13. [Assumptions summary](#13-assumptions-summary)
+14. [Key parameter reference](#14-key-parameter-reference)
 
 ---
 
@@ -98,6 +107,17 @@ Step 2b prevalence_histogram.py
         - annotates PCA / HCA prevalence threshold lines from config.py
         -> prevalence_histogram.png
         -> prevalence_summary.csv
+        |
+        v
+Step 2c compound_classification.py  [optional: RUN_COMPOUND_CLASSIFICATION]
+        - reads feature_metadata.csv (compound_name column)
+        - queries PubChem: name -> CID -> SMILES + InChIKey
+        - ClassyFire taxonomy via classyfire.wishartlab.com (InChIKey)
+        - NPClassifier NP class via npclassifier.gnps2.org (SMILES)
+        - all responses cached in pubchem_cache.json (write-through)
+        - rate-limited per API; 503 retried with exponential back-off
+        -> compound_classes.csv
+        -> feature_metadata_enriched.csv
         |
         v
 Step 3  normalization.py
@@ -643,7 +663,235 @@ and adjust accordingly before committing to normalization.
 
 ---
 
-## 5. Step 3 — Normalization, transformation, and scaling
+## 5. Step 2c — Compound classification
+
+**Script:** `compound_classification.py`
+**Config guard:** `RUN_COMPOUND_CLASSIFICATION = True` (set to `False` to skip)
+**Input:** `output/feature_metadata.csv`
+**Output:** `output/compound_classes.csv`, `output/feature_metadata_enriched.csv`,
+`output/pubchem_cache.json` (cache; persists across runs)
+
+This optional step queries the PubChem REST API to annotate each identified
+compound with its chemical taxonomy (ClassyFire) and natural-product pathway
+(NPClassifier). The results can be used to colour or group features in plots
+by compound class or biological origin.
+
+---
+
+### 5.1 Overview and API endpoints
+
+Five endpoints are called per compound, in sequence across three services:
+
+**1. Name → CID** (`PubChem PUG REST`)
+```
+GET https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{encoded_name}/cids/JSON
+```
+Returns a list of Compound IDs matching the name. The first CID is used.
+Compound names are URL-encoded (`requests.utils.quote(name, safe="")`) so that
+names containing commas or parentheses (common in TraceFinder exports, e.g.
+`"4-Penten-1-ol, propanoate"`) are transmitted correctly.
+
+**2. CID → molecular formula + IUPAC name** (`PubChem PUG REST`)
+```
+GET https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/MolecularFormula,IUPACName/JSON
+```
+Used as a cross-check and to populate the `molecular_formula` and `iupac_name`
+columns in the output.
+
+**3. CID → canonical SMILES + InChIKey** (`PubChem PUG REST`)
+```
+GET https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/CanonicalSMILES,InChIKey/JSON
+```
+The canonical SMILES and InChIKey are needed as inputs for ClassyFire and
+NPClassifier respectively. Fetched separately from properties to maintain
+cache backward-compatibility.
+
+**4. InChIKey → ClassyFire taxonomy** (`ClassyFire direct API`)
+```
+GET http://classyfire.wishartlab.com/entities/{inchikey}.json
+```
+Queries the ClassyFire service directly at the Wishart Lab. This direct API
+has substantially higher coverage than the PubChem PUG View ClassyFire mirror,
+which is incomplete for many GC-MS volatiles (short-chain aldehydes, many
+terpenes) and incorrectly returns HTTP 400 for absent sections instead of 404.
+The response JSON has the structure `{"kingdom": {"name": "..."}, "superclass": {...}, ...}`.
+
+**5. SMILES → NPClassifier** (`NPClassifier direct API`)
+```
+GET https://npclassifier.gnps2.org/classify?smiles={encoded_smiles}
+```
+Returns `{"pathway_results": [...], "superclass_results": [...], "class_results": [...]}`.
+The first element of each list is used (highest-confidence prediction).
+Returns empty lists for compounds outside NPClassifier's training domain.
+
+---
+
+### 5.2 Caching strategy
+
+All API responses are cached in a single JSON file (`PUBCHEM_CACHE_FILE`,
+default `output/pubchem_cache.json`) with five top-level keys:
+
+```json
+{
+  "name_to_cid":         { "Chloroiodomethane": "6352", "Unknown X": "__NOT_FOUND__" },
+  "cid_to_properties":   { "6352": { "molecular_formula": "CHClI", "iupac_name": "..." } },
+  "cid_to_smiles":       { "6352": { "smiles": "ClCI", "inchikey": "LHZQKWHWTTCJSH-UHFFFAOYSA-N" } },
+  "cid_to_classyfire":   { "6352": { "kingdom": "Organic compounds", ... } },
+  "cid_to_npclassifier": { "6352": "__NOT_FOUND__" }
+}
+```
+
+The sentinel value `"__NOT_FOUND__"` is stored when PubChem returns a 404 or
+when the response contains no data for that heading. This prevents the same
+unannotated compound from being re-queried on every pipeline run.
+
+**Write-through:** the cache file is written to disk immediately after every
+API response — if the script is interrupted mid-run, all results up to that
+point are preserved.
+
+**To force a full re-fetch:** delete `output/pubchem_cache.json`. To re-fetch
+a single compound: open the file and delete its entry from `name_to_cid` (and
+optionally from the `cid_to_*` dicts if the CID itself needs refreshing).
+
+**Cache-only mode (`PUBCHEM_CACHE_ONLY = True`):** no network requests are
+made at all. Compounds already in the cache are annotated as normal; compounds
+not yet in the cache are silently skipped (they appear as `unnamed` in the
+output). Use this when you are offline, want to regenerate the output CSVs
+instantly, or want to avoid consuming API quota on a re-run where you know the
+cache is already complete.
+
+---
+
+### 5.3 Rate limiting and compliance
+
+| Service | Rate limit | Implementation |
+|---------|-----------|---------------|
+| PubChem | ≤ 5 req/s (stated) | `time.sleep(PUBCHEM_RATE_LIMIT_DELAY)` before every request; default 0.35 s ≈ 2.9 req/sec |
+| ClassyFire | not stated | `time.sleep(CLASSYFIRE_RATE_LIMIT_DELAY)` before every request; default 1.0 s (conservative) |
+| NPClassifier | not stated | `time.sleep(NPCLASSIFIER_RATE_LIMIT_DELAY)` before every request; default 1.0 s (conservative) |
+| All services | server overload | HTTP 503 triggers exponential back-off: sleep 1, 2, 4, 8, 16 s before retrying (up to 5 attempts) |
+| All services | no redundant calls | Cache checked before every API call; a cache hit skips the network entirely |
+
+The `PUBCHEM_USER_AGENT` config value should contain your contact email so that
+NCBI can reach you if your usage pattern causes issues. The same User-Agent
+header is sent to ClassyFire and NPClassifier as well. Replace
+`YOUR_EMAIL_HERE` with a real address before running the pipeline on large
+datasets.
+
+---
+
+### 5.4 Name filtering
+
+Features are skipped (marked `"unnamed"`) if their `compound_name` is:
+- `NaN`, `None`, or any non-string value
+- An empty or whitespace-only string
+- A TraceFinder auto-generated placeholder beginning with `"Peak@"`
+  (e.g. `"Peak@3.102"` — these are unidentified features with no library match)
+
+Only features that pass this filter consume API quota. Features that share the
+same compound name (multiple features matched to the same compound) each benefit
+from the cache: only one network request is made per unique name.
+
+---
+
+### 5.5 ClassyFire taxonomy
+
+ClassyFire is a rule-based chemical taxonomy developed by the Wishart Lab and
+integrated into PubChem. It assigns every compound to a five-level hierarchy:
+
+| Level | Example |
+|-------|---------|
+| Kingdom | Organic compounds |
+| Superclass | Lipids and lipid-like molecules |
+| Class | Fatty acyls |
+| Subclass | Fatty aldehydes |
+| Direct Parent | α,β-unsaturated aldehydes |
+
+`Direct Parent` is the most specific level and is the most useful for
+metabolomics annotation. `Kingdom` is the broadest and most reliably populated.
+
+**Coverage note:** The pipeline queries ClassyFire via its direct API
+(`classyfire.wishartlab.com/entities/{inchikey}.json`), which has higher
+coverage than the PubChem PUG View mirror. Most sesquiterpenoids, monoterpenes,
+fatty aldehydes, and alcohols are classified correctly. Compounds not yet in the
+ClassyFire database (novel or very rare structures) return no data; the
+`classification_status` column identifies these cases as `classyfire_not_available`.
+
+---
+
+### 5.6 NPClassifier annotations
+
+NPClassifier (Kim et al., 2021) is a deep-learning model for natural product
+classification. It assigns compounds to a three-level hierarchy focused on
+biosynthetic pathway:
+
+| Level | Example |
+|-------|---------|
+| Pathway | Polyketides |
+| Superclass | Fatty acids |
+| Class | Fatty acid esters |
+
+NPClassifier is queried via its direct API (`npclassifier.gnps2.org/classify?smiles=...`)
+using the canonical SMILES retrieved from PubChem. It is optimised for
+secondary metabolites (terpenoids, alkaloids, polyketides, shikimates) and
+provides useful pathway-level annotation for biogenic GC-MS volatiles — for
+example, sesquiterpenes are classified as `Terpenoids → Sesquiterpenoids →
+Bisabolane sesquiterpenoids`. Coverage for industrial volatiles, organohalogens,
+and synthetic compounds is low; those features will have `NaN` in the
+`npclassifier_*` columns.
+
+---
+
+### 5.7 Output columns and classification status
+
+**`compound_classes.csv`**
+
+| Column | Description |
+|--------|-------------|
+| `feature_id` | Feature identifier (index from `feature_metadata.csv`) |
+| `compound_name` | Name from TraceFinder library match |
+| `classification_status` | See table below |
+| `pubchem_cid` | PubChem Compound ID |
+| `iupac_name` | IUPAC systematic name from PubChem |
+| `molecular_formula` | Molecular formula from PubChem (cross-check) |
+| `kingdom` | ClassyFire Kingdom |
+| `superclass` | ClassyFire Superclass |
+| `class` | ClassyFire Class |
+| `subclass` | ClassyFire Subclass |
+| `direct_parent` | ClassyFire Direct Parent (most specific level) |
+| `npclassifier_pathway` | NPClassifier Pathway |
+| `npclassifier_superclass` | NPClassifier Superclass |
+| `npclassifier_class` | NPClassifier Class |
+
+**`classification_status` values:**
+
+| Value | Meaning |
+|-------|---------|
+| `found` | CID resolved and ClassyFire data retrieved successfully |
+| `classyfire_not_available` | CID found but no ClassyFire data in PubChem |
+| `cid_not_found` | Compound name returned no results from PubChem |
+| `unnamed` | Feature has no compound name (unidentified) |
+| `error` | Network error during query (transient; re-run will retry) |
+
+**`feature_metadata_enriched.csv`** is `feature_metadata.csv` with all
+classification columns left-joined on `feature_id`. Unclassified features
+receive `NaN` in the new columns. This file is intended for use in
+class-coloured PCA scores plots or class-annotated volcano plots.
+
+---
+
+### 5.8 Assumptions and limitations
+
+| Assumption | Consequence if violated |
+|-----------|------------------------|
+| The TraceFinder compound name uniquely identifies a compound in PubChem | If PubChem returns multiple CIDs for a name, only the first is used; this may be the wrong isomer |
+| ClassyFire class is meaningful for GC-MS volatile metabolites | Direct API coverage is high for common volatiles; novel structures may still lack entries |
+| NPClassifier is applicable to environmental/food volatiles | NPClassifier is optimised for plant/microbial secondary metabolites; industrial or synthetic volatiles receive no classification |
+| Network access is available during the pipeline run | Without internet access, all features receive `error` status; re-run when connectivity is restored (cache preserves previous results) |
+
+---
+
+## 6. Step 3 — Normalization, transformation, and scaling
 
 **Script:** `normalization.py`
 **Input:** `peak_matrix_blank_corrected.csv`, `feature_metadata.csv`
@@ -852,7 +1100,7 @@ a reference to the same object (not duplicated in memory).
 
 ---
 
-## 6. Step 4 — Principal Component Analysis (PCA)
+## 7. Step 4 — Principal Component Analysis (PCA)
 
 **Script:** `pca.py`
 **Input:** `peak_matrix_processed_pca.csv`, `sample_groups.csv`
@@ -962,7 +1210,7 @@ used as axis labels and annotations in place of feature IDs.
 
 ---
 
-## 7. Step 5 — Hierarchical Cluster Analysis (HCA)
+## 8. Step 5 — Hierarchical Cluster Analysis (HCA)
 
 **Script:** `hca.py`
 **Input:** `peak_matrix_processed.csv` (full feature set), `sample_groups.csv`
@@ -1038,7 +1286,7 @@ the row and column dendrograms respectively. This order is useful for:
 
 ---
 
-## 8. Step 6 — Volcano plot
+## 9. Step 6 — Volcano plot
 
 **Script:** `volcano.py`
 **Input:** `peak_matrix_blank_corrected.csv` (raw blank-corrected areas),
@@ -1204,7 +1452,7 @@ re-running the analysis.
 
 ---
 
-## 9. Report — Blank contaminants
+## 10. Report — Blank contaminants
 
 **Script:** `blank_contaminants_report.py`
 **Input:** `blank_correction_audit.csv`, `feature_name_map.csv`
@@ -1262,7 +1510,7 @@ triggered it. This report restores full provenance:
 
 ---
 
-## 10. Report — Top PCA features
+## 11. Report — Top PCA features
 
 **Script:** `top_features_analysis.py`
 **Input:** `pca_loadings.csv`, `peak_matrix_raw.csv`, `feature_metadata.csv`,
@@ -1317,7 +1565,7 @@ python top_features_analysis.py --n 20  # top 20 features
 
 ---
 
-## 11. Feature labelling (compound names)
+## 12. Feature labelling (compound names)
 
 **Config:** `COMPOUND_NAME_COL`, `FEATURE_LABEL`
 
@@ -1351,7 +1599,7 @@ back to `feature_metadata.csv` and `feature_peak_log.csv` unambiguously.
 
 ---
 
-## 12. Assumptions summary
+## 13. Assumptions summary
 
 The following is a consolidated list of the key assumptions embedded in the
 pipeline design. Violating these assumptions does not always produce wrong
@@ -1402,7 +1650,7 @@ results, but the user should be aware of them when interpreting output.
 
 ---
 
-## 13. Key parameter reference
+## 14. Key parameter reference
 
 | Parameter | Default | Step | Description |
 |-----------|---------|------|-------------|
@@ -1443,8 +1691,15 @@ results, but the user should be aware of them when interpreting output.
 | `VOLCANO_P_THRESHOLD` | `0.05` | 6 | BH-adjusted p-value significance threshold |
 | `VOLCANO_TOP_LABELS` | `10` | 6 | Most significant features labelled in plot |
 | `FEATURE_LABEL` | `"id"` | 4,5,6 | `"id"` = feature_id in plots; `"name"` = compound name |
+| `RUN_COMPOUND_CLASSIFICATION` | `True` | 2c | Enable/disable the PubChem classification step entirely |
+| `PUBCHEM_CACHE_ONLY` | `False` | 2c | `True` = use local cache only, no network requests; compounds absent from the cache are skipped. `False` = fetch missing entries normally |
+| `PUBCHEM_USER_AGENT` | `"TF_NT_pipeline/1.0 (...)"` | 2c | User-Agent header sent with all PubChem requests; replace `YOUR_EMAIL_HERE` |
+| `PUBCHEM_RATE_LIMIT_DELAY` | `0.35` | 2c | Seconds between PubChem requests (~2.9/sec, under PubChem's 5/sec limit) |
+| `CLASSYFIRE_RATE_LIMIT_DELAY` | `1.0` | 2c | Seconds between ClassyFire requests (no stated limit; 1.0 s is conservative) |
+| `NPCLASSIFIER_RATE_LIMIT_DELAY` | `1.0` | 2c | Seconds between NPClassifier requests (no stated limit; 1.0 s is conservative) |
+| `PUBCHEM_CACHE_FILE` | `"output/pubchem_cache.json"` | 2c | Local JSON cache for all API responses; delete to force full re-fetch |
 
 ---
 
-*Generated for pipeline version as of 2026-03-31. All formulae are derived
+*Generated for pipeline version as of 2026-03-31 (includes compound_classification step). All formulae are derived
 directly from the Python source code; parameters refer to `config.py`.*

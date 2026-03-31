@@ -46,6 +46,7 @@ import matplotlib
 matplotlib.use("Agg")          # non-interactive backend - no display needed
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib.legend import Legend
 import seaborn as sns
 
 import config
@@ -74,6 +75,105 @@ def _load_feature_labels(cfg):
             if pd.notna(name) and str(name).strip()}
 
 
+# --- Class annotation helpers -------------------------------------------------
+
+def _load_class_annotation(cfg, feature_ids):
+    """
+    Build highlight_map and class_label_map from CLASS_HIGHLIGHT / CLASS_LABEL_COLUMN.
+
+    highlight_map    : feature_id -> hex color  (features to color in tick labels)
+    class_label_map  : feature_id -> class string  (suffix to append to labels)
+    """
+    highlight_map   = {}
+    class_label_map = {}
+
+    enriched_path = os.path.join(cfg.OUTPUT_DIR, "feature_metadata_enriched.csv")
+    highlights = getattr(cfg, "CLASS_HIGHLIGHT", [])
+    label_col  = getattr(cfg, "CLASS_LABEL_COLUMN", "")
+
+    if not (highlights or label_col) or not os.path.exists(enriched_path):
+        return highlight_map, class_label_map
+
+    enriched = pd.read_csv(enriched_path, index_col="feature_id")
+
+    for entry in highlights:
+        col   = entry.get("column")
+        val   = entry.get("value")
+        color = entry.get("color")
+        if not (col and val and color):
+            continue
+        if col not in enriched.columns:
+            continue
+        for fid in feature_ids:
+            if fid in enriched.index and enriched.at[fid, col] == val:
+                highlight_map[fid] = color
+
+    if label_col and label_col in enriched.columns:
+        for fid in feature_ids:
+            if fid in enriched.index:
+                v = enriched.at[fid, label_col]
+                if pd.notna(v) and str(v).strip() and str(v) != "nan":
+                    class_label_map[fid] = str(v).strip()
+
+    return highlight_map, class_label_map
+
+
+def _build_col_colors(cfg, feature_ids):
+    """
+    Build a col_colors DataFrame for seaborn clustermap from enriched metadata.
+
+    Each column in HCA_CLASS_ANNOTATION_COLUMNS becomes one colored annotation
+    strip alongside the feature dendrogram.  Colors are auto-assigned from a
+    qualitative palette; unknown/NaN values are shown in light gray.
+
+    Returns
+    -------
+    col_colors_df : pd.DataFrame  (index = feature_ids, cols = annotation cols)
+                    or None when HCA_CLASS_ANNOTATION_COLUMNS is empty / file missing
+    legend_data   : dict  {col_name: {value: matplotlib_color, ...}}
+    """
+    ann_cols = getattr(cfg, "HCA_CLASS_ANNOTATION_COLUMNS", [])
+    if not ann_cols:
+        return None, {}
+
+    enriched_path = os.path.join(cfg.OUTPUT_DIR, "feature_metadata_enriched.csv")
+    if not os.path.exists(enriched_path):
+        print("  [info] feature_metadata_enriched.csv not found; "
+              "skipping class annotation strips")
+        return None, {}
+
+    enriched = pd.read_csv(enriched_path, index_col="feature_id")
+    gray     = (0.82, 0.82, 0.82)
+
+    result_cols = {}
+    legend_data = {}
+
+    for col in ann_cols:
+        if col not in enriched.columns:
+            print(f"  [info] HCA annotation column '{col}' not in enriched "
+                  "metadata; skipping")
+            continue
+
+        vals = (enriched[col]
+                .reindex(feature_ids)
+                .fillna("Unknown")
+                .astype(str)
+                .replace("nan", "Unknown"))
+
+        unique_known = sorted(v for v in vals.unique() if v != "Unknown")
+        palette      = sns.color_palette("tab20", max(len(unique_known), 1))
+        color_map    = {v: tuple(palette[i]) for i, v in enumerate(unique_known)}
+        color_map["Unknown"] = gray
+
+        result_cols[col] = vals.map(color_map)
+        legend_data[col] = {v: color_map[v] for v in unique_known}
+
+    if not result_cols:
+        return None, {}
+
+    return pd.DataFrame(result_cols, index=feature_ids), legend_data
+
+
 # --- Colour palette (matches pca.py) -----------------------------------------
 
 _PALETTE = [
@@ -100,6 +200,84 @@ def _group_colours(group_series):
     return group_series.map(colour_map), colour_map
 
 
+# --- Standalone legend key ----------------------------------------------------
+
+def _save_class_legend(group_colour_map, col_colors_legend, output_path):
+    """
+    Write a standalone PNG file that maps every color to its class label.
+
+    One section per annotation column (superclass, npclassifier_pathway, …)
+    plus a section for sample groups.  This is always readable regardless of
+    the heatmap's figure layout.
+
+    Parameters
+    ----------
+    group_colour_map  : dict  {group_name: color}
+    col_colors_legend : dict  {col_name: {value: color}}  (may be empty)
+    output_path       : str
+    """
+    # collect all sections: sample groups + each annotation column
+    sections = {}
+    if group_colour_map:
+        sections["Sample groups"] = group_colour_map
+    if col_colors_legend:
+        for col_name, val_colors in col_colors_legend.items():
+            if val_colors:
+                sections[col_name] = val_colors
+
+    if not sections:
+        return
+
+    # layout: one column of patches per section, stacked vertically
+    PATCH_H   = 0.30   # inches per entry row
+    TITLE_H   = 0.38   # inches per section title
+    PAD       = 0.20   # inches between sections
+    LEFT      = 0.15   # left margin
+    FIG_W     = 4.2    # fixed width
+
+    total_h = PAD
+    for title, mapping in sections.items():
+        total_h += TITLE_H + len(mapping) * PATCH_H + PAD
+    total_h = max(total_h, 1.5)
+
+    fig, ax = plt.subplots(figsize=(FIG_W, total_h))
+    ax.set_xlim(0, FIG_W)
+    ax.set_ylim(0, total_h)
+    ax.axis("off")
+
+    y = total_h - PAD  # start from top, step downward
+
+    for section_title, mapping in sections.items():
+        y -= TITLE_H
+        ax.text(
+            LEFT, y + TITLE_H * 0.35,
+            section_title,
+            fontsize=10, fontweight="bold", va="center",
+        )
+        # thin rule under the title
+        ax.plot([LEFT, FIG_W - LEFT], [y + TITLE_H * 0.05, y + TITLE_H * 0.05],
+                color="0.75", lw=0.6)
+
+        for label, color in mapping.items():
+            y -= PATCH_H
+            rect = mpatches.FancyBboxPatch(
+                (LEFT, y + PATCH_H * 0.15),
+                PATCH_H * 0.65, PATCH_H * 0.65,
+                boxstyle="round,pad=0.02",
+                facecolor=color, edgecolor="0.4", linewidth=0.5,
+            )
+            ax.add_patch(rect)
+            ax.text(
+                LEFT + PATCH_H * 0.85, y + PATCH_H * 0.5,
+                str(label),
+                fontsize=8.5, va="center",
+            )
+        y -= PAD
+
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 # --- Validation ---------------------------------------------------------------
 
 def _validate_linkage_metric(linkage, metric):
@@ -118,27 +296,34 @@ def _validate_linkage_metric(linkage, metric):
 # --- HCA / clustermap --------------------------------------------------------
 
 def plot_hca(matrix, group_series, linkage, metric, cmap,
-             max_feature_labels, output_path):
+             max_feature_labels, output_path,
+             col_colors_df=None, col_colors_legend=None,
+             feature_display_labels=None, highlight_map=None):
     """
     Draw and save a bidirectional clustered heatmap with group row annotation.
 
     Parameters
     ----------
-    matrix             : DataFrame  samples x features  (processed, scaled)
-    group_series       : Series     sample -> group label
-    linkage            : str        scipy linkage method: "ward", "average",
-                                    "complete", "single"
-    metric             : str        distance metric: "euclidean", "correlation"
-    cmap               : str        matplotlib/seaborn diverging colormap
-    max_feature_labels : int        label column axis when n_features <= this;
-                                    0 = never show feature labels
-    output_path        : str
+    matrix                : DataFrame  samples x features  (processed, scaled)
+    group_series          : Series     sample -> group label
+    linkage               : str        scipy linkage method
+    metric                : str        distance metric
+    cmap                  : str        matplotlib/seaborn diverging colormap
+    max_feature_labels    : int        label column axis when n_features <= this
+    output_path           : str
+    col_colors_df         : DataFrame or None
+                            feature_id-indexed DataFrame for class annotation strips
+    col_colors_legend     : dict or None
+                            {col_name: {value: color}} for strip legends
+    feature_display_labels: list or None
+                            display label per feature (same order as matrix.columns);
+                            includes compound names and optional [class] suffix
+    highlight_map         : dict or None
+                            display_label -> hex color for x-tick label coloring
 
     Returns
     -------
     g : seaborn.matrix.ClusterGrid
-        The grid object; use g.dendrogram_row / g.dendrogram_col to extract
-        reordered indices.
     """
     _validate_linkage_metric(linkage, metric)
 
@@ -160,8 +345,9 @@ def plot_hca(matrix, group_series, linkage, metric, cmap,
         method           = linkage,
         metric           = metric,
         cmap             = cmap,
-        center           = 0,           # centre colourmap at 0 (correct for scaled data)
+        center           = 0,
         row_colors       = row_colours,
+        col_colors       = col_colors_df,
         yticklabels      = True,
         xticklabels      = show_col_labels,
         linewidths       = 0,
@@ -171,28 +357,84 @@ def plot_hca(matrix, group_series, linkage, metric, cmap,
         colors_ratio     = 0.025,
     )
 
-    # rotate tick labels
+    # rotate sample (row) tick labels
     g.ax_heatmap.set_yticklabels(
         g.ax_heatmap.get_yticklabels(), rotation=0, fontsize=9
     )
+
+    # feature (column) tick labels: apply display labels + optional highlighting
     if show_col_labels:
+        # seaborn tick labels are the original column names (feature IDs) after
+        # clustering reorder; replace with display labels in the same reordered order
+        existing_ticks = g.ax_heatmap.get_xticklabels()
+        if feature_display_labels is not None:
+            # build feature_id -> display_label lookup
+            fid_to_display = dict(zip(matrix.columns, feature_display_labels))
+            new_labels = [fid_to_display.get(t.get_text(), t.get_text())
+                          for t in existing_ticks]
+        else:
+            new_labels = [t.get_text() for t in existing_ticks]
+
         g.ax_heatmap.set_xticklabels(
-            g.ax_heatmap.get_xticklabels(), rotation=90, fontsize=col_fontsize
+            new_labels, rotation=90, fontsize=col_fontsize
         )
+
+        # color tick labels for highlighted features
+        if highlight_map:
+            for tick in g.ax_heatmap.get_xticklabels():
+                lbl = tick.get_text()
+                if lbl in highlight_map:
+                    tick.set_color(highlight_map[lbl])
 
     g.ax_heatmap.set_xlabel("Features", fontsize=10)
     g.ax_heatmap.set_ylabel("Samples",  fontsize=10)
 
+    # --- legends --------------------------------------------------------------
+    # We use Legend(...) directly instead of ax.legend() so that each call
+    # creates an independent artist — ax.legend() replaces the previous legend
+    # and can't stack multiple boxes reliably.
+    legend_y_top = 1.0   # axes-coordinate anchor, stepping downward
+
+    def _add_legend(ax, handles, title, y_anchor, fontsize=9):
+        leg = Legend(
+            ax, handles, [h.get_label() for h in handles],
+            title=title,
+            bbox_to_anchor=(1.18, y_anchor), loc="upper left",
+            borderaxespad=0, framealpha=0.9, fontsize=fontsize,
+        )
+        ax.add_artist(leg)
+        # estimate height consumed: title + entries
+        n = len(handles)
+        return y_anchor - (0.06 + n * (0.052 if fontsize >= 9 else 0.045))
+
     # group legend (row colour annotation)
-    patches = [
+    group_patches = [
         mpatches.Patch(color=col, label=grp)
         for grp, col in colour_map.items()
     ]
-    g.ax_heatmap.legend(
-        handles=patches, title="Group",
-        bbox_to_anchor=(1.18, 1.0), loc="upper left",
-        borderaxespad=0, framealpha=0.9, fontsize=9,
+    legend_y_top = _add_legend(
+        g.ax_heatmap, group_patches, "Group", legend_y_top, fontsize=9
     )
+
+    # class annotation strip legends — stacked below group legend
+    if col_colors_legend:
+        for col_name, val_colors in col_colors_legend.items():
+            if not val_colors:
+                continue
+            ann_patches = [
+                mpatches.Patch(color=col, label=val)
+                for val, col in val_colors.items()
+            ]
+            # truncate to avoid the legend running off the bottom of the figure
+            MAX_LEGEND_ENTRIES = 18
+            if len(ann_patches) > MAX_LEGEND_ENTRIES:
+                ann_patches = ann_patches[:MAX_LEGEND_ENTRIES]
+                ann_patches.append(
+                    mpatches.Patch(color=(0.9, 0.9, 0.9), label="(+ more)")
+                )
+            legend_y_top = _add_legend(
+                g.ax_heatmap, ann_patches, col_name, legend_y_top, fontsize=8
+            )
 
     g.figure.suptitle(
         f"HCA heatmap  ({linkage} linkage, {metric} distance,  "
@@ -231,28 +473,66 @@ def run(cfg=config):
     print(f"  metric             : {cfg.HCA_METRIC}")
     print(f"  colormap           : {cfg.HCA_CMAP}")
 
-    # build display matrix (compound names when FEATURE_LABEL = "name")
+    feature_ids = list(matrix.columns)
+
+    # --- class annotation strips (col_colors) ---------------------------------
+    col_colors_df, col_colors_legend = _build_col_colors(cfg, feature_ids)
+    ann_cols = getattr(cfg, "HCA_CLASS_ANNOTATION_COLUMNS", [])
+    if col_colors_df is not None:
+        print(f"  class annotations  : {ann_cols}")
+
+    # --- class highlight + label suffix (CLASS_HIGHLIGHT / CLASS_LABEL_COLUMN) -
+    highlight_map, class_label_map = _load_class_annotation(cfg, feature_ids)
+    if highlight_map:
+        print(f"  class highlights   : {len(highlight_map)} features")
+
+    # --- build display labels (name + optional [class] suffix) ----------------
     label_map = _load_feature_labels(cfg)
+    label_col = getattr(cfg, "CLASS_LABEL_COLUMN", "")
+
+    feature_display_labels = []
+    display_highlight_map  = {}  # keyed by display label for tick coloring
+
+    for fid in feature_ids:
+        display = label_map.get(fid, fid) if label_map else fid
+        if class_label_map.get(fid):
+            display = f"{display} [{class_label_map[fid]}]"
+        feature_display_labels.append(display)
+        if fid in highlight_map:
+            display_highlight_map[display] = highlight_map[fid]
+
     if label_map:
-        display_matrix = matrix.copy()
-        display_matrix.columns = [label_map.get(fid, fid)
-                                   for fid in matrix.columns]
         print(f"  feature labels     : compound names  (FEATURE_LABEL='name')")
-    else:
-        display_matrix = matrix
+    if label_col:
+        print(f"  class label suffix : {label_col}")
 
     # --- clustered heatmap ----------------------------------------------------
     out_plot = os.path.join(plots_dir, "hca_heatmap.png")
     g = plot_hca(
-        display_matrix,
+        matrix,          # keep feature_id columns so col_colors_df index matches
         group_series,
-        linkage            = cfg.HCA_LINKAGE,
-        metric             = cfg.HCA_METRIC,
-        cmap               = cfg.HCA_CMAP,
-        max_feature_labels = cfg.HCA_MAX_FEATURE_LABELS,
-        output_path        = out_plot,
+        linkage               = cfg.HCA_LINKAGE,
+        metric                = cfg.HCA_METRIC,
+        cmap                  = cfg.HCA_CMAP,
+        max_feature_labels    = cfg.HCA_MAX_FEATURE_LABELS,
+        output_path           = out_plot,
+        col_colors_df         = col_colors_df,
+        col_colors_legend     = col_colors_legend,
+        feature_display_labels= feature_display_labels,
+        highlight_map         = display_highlight_map,
     )
     print(f"  -> {out_plot}")
+
+    # --- standalone color key -------------------------------------------------
+    # Build group colour_map here (mirrors _group_colours used inside plot_hca)
+    unique_groups = list(dict.fromkeys(
+        group_series.reindex(matrix.index).fillna("unknown")
+    ))
+    group_colour_map = {grp: _PALETTE[i % len(_PALETTE)]
+                        for i, grp in enumerate(unique_groups)}
+    out_legend = os.path.join(plots_dir, "hca_class_legend.png")
+    _save_class_legend(group_colour_map, col_colors_legend or {}, out_legend)
+    print(f"  -> {out_legend}  (color key for annotation strips)")
 
     # --- save dendrogram orders -----------------------------------------------
     row_idx   = g.dendrogram_row.reordered_ind

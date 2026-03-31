@@ -6,6 +6,10 @@ Runs all processing steps in sequence:
   Step 1  data_import.py            -> output/peak_matrix_raw.csv
   Step 2  blank_correction.py       -> output/peak_matrix_blank_corrected.csv
   Step 2b prevalence_histogram.py   -> output/plots/prevalence_histogram.png
+  Step 2c compound_classification.py -> output/compound_classes.csv (optional,
+                                        controlled by RUN_COMPOUND_CLASSIFICATION)
+  Step 2d compound_class_plots.py   -> output/plots/class_pie_*.png (optional,
+                                        controlled by RUN_CLASS_PLOTS)
   Step 3  normalization.py          -> output/peak_matrix_processed.csv
   Step 4  pca.py                    -> output/plots/pca_scores.png + loadings
   Step 5  hca.py                    -> output/plots/hca_heatmap.png + dendrogram orders
@@ -23,6 +27,8 @@ To run individual steps:
     python data_import.py
     python blank_correction.py
     python prevalence_histogram.py
+    python compound_classification.py   # optional; respects RUN_COMPOUND_CLASSIFICATION
+    python compound_class_plots.py      # optional; respects RUN_CLASS_PLOTS
     python normalization.py
     python pca.py
     python hca.py
@@ -41,6 +47,8 @@ import config
 import data_import
 import blank_correction
 import prevalence_histogram as prevalence_histogram_step
+import compound_classification as compound_classification_step
+import compound_class_plots as compound_class_plots_step
 import normalization
 import pca as pca_step
 import hca as hca_step
@@ -69,6 +77,12 @@ def main():
     print()
     prevalence_histogram_step.run(config)
     print()
+    if getattr(config, "RUN_COMPOUND_CLASSIFICATION", False):
+        compound_classification_step.run(config)
+        print()
+    if getattr(config, "RUN_CLASS_PLOTS", False):
+        compound_class_plots_step.run(config)
+        print()
     normalization.run(config)
     print()
     pca_step.run(config)

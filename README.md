@@ -10,6 +10,8 @@ data exported from **Thermo TraceFinder** (Orbitrap MS).
 | 1 | `data_import.py` | TraceFinder CSVs -> `peak_matrix_raw.csv` |
 | 2 | `blank_correction.py` | raw matrix -> `peak_matrix_blank_corrected.csv` |
 | 2b | `prevalence_histogram.py` | `peak_matrix_blank_corrected.csv` -> `prevalence_histogram.png` + `prevalence_summary.csv` |
+| 2c | `compound_classification.py` | `feature_metadata.csv` -> `compound_classes.csv` + `feature_metadata_enriched.csv` *(optional; see `RUN_COMPOUND_CLASSIFICATION`)* |
+| 2d | `compound_class_plots.py` | `feature_metadata_enriched.csv` -> `class_pie_*.png` *(optional; see `RUN_CLASS_PLOTS`)* |
 | 3 | `normalization.py` | blank-corrected -> `peak_matrix_processed.csv` + `peak_matrix_processed_pca.csv` |
 | 4 | `pca.py` | `peak_matrix_processed_pca.csv` -> scores/loadings plots & CSVs |
 | 5 | `hca.py` | `peak_matrix_processed.csv` -> clustered heatmap + dendrogram order CSVs |
@@ -85,8 +87,10 @@ Or run individual steps independently (useful when re-running after parameter ch
 ```bash
 python data_import.py           # Step 1  - re-run if data or RT_MARGIN changes
 python blank_correction.py      # Step 2  - re-run if FOLD_CHANGE_THRESHOLD changes
-python prevalence_histogram.py  # Step 2b - re-run after blank correction to review detection rates
-python normalization.py         # Step 3  - re-run if NORMALIZATION, SCALING, or EXCLUSION_LIST changes
+python prevalence_histogram.py      # Step 2b - re-run after blank correction to review detection rates
+python compound_classification.py  # Step 2c - re-run to refresh PubChem annotations (uses cache)
+python compound_class_plots.py     # Step 2d - re-run after classification or if CLASS_PIE_* settings change
+python normalization.py            # Step 3  - re-run if NORMALIZATION, SCALING, or EXCLUSION_LIST changes
 python pca.py                # Step 4 - re-run if PCA settings change
 python hca.py                # Step 5 - re-run if HCA_LINKAGE or HCA_METRIC changes
 python volcano.py            # Step 6 - re-run if VOLCANO_* thresholds change
@@ -133,6 +137,16 @@ output/
 |-- features_removed_zero_variance.csv   features dropped by scaling (zero variance after log2)
 |                                        (only when any are removed)
 |
+|-- compound_classes.csv                 per-feature PubChem classification:
+|                                        feature_id, compound_name, classification_status,
+|                                        pubchem_cid, iupac_name, molecular_formula,
+|                                        kingdom, superclass, class, subclass, direct_parent,
+|                                        npclassifier_pathway/superclass/class
+|                                        (only written when RUN_COMPOUND_CLASSIFICATION = True)
+|-- feature_metadata_enriched.csv        feature_metadata.csv with class columns joined;
+|                                        use for class-coloured or class-labelled plots
+|-- pubchem_cache.json                   local API response cache; delete to force re-fetch
+|
 |-- prevalence_summary.csv               per-prevalence-level feature counts
 |                                        (n_samples_detected, prevalence, n_features)
 |
@@ -148,6 +162,8 @@ output/
 |-- blank_contaminants_report.csv        blank-removed features with compound name,
 |                                        RT, m/z, max blank area, and sample list
 |-- plots/
+    |-- class_pie_<column>_<group>.png   compound class pie chart per column x group
+    |                                    (only when RUN_CLASS_PLOTS = True)
     |-- prevalence_histogram.png         feature prevalence distribution; one bar per k/N
     |                                    detection level; reference lines for PCA/HCA thresholds
     |-- pca_scores.png                   scores scatter plot with group ellipses
@@ -185,9 +201,24 @@ output/
 | `HCA_METRIC` | `"euclidean"` | Distance metric for HCA |
 | `HCA_CMAP` | `"vlag"` | Colormap for heatmap (diverging, suited to scaled data) |
 | `HCA_MAX_FEATURE_LABELS` | `50` | Show feature axis labels when n_features <= this |
+| `HCA_CLASS_ANNOTATION_COLUMNS` | `[]` | Columns from enriched metadata to show as colored annotation strips alongside the feature dendrogram; e.g. `["superclass", "npclassifier_pathway"]` |
 | `COMPOUND_NAME_COL` | `"Name"` | Column in TraceFinder CSVs holding compound names; `""` to disable |
 | `FEATURE_LABEL` | `"id"` | `"id"` = use feature_id in plots; `"name"` = use compound name (falls back to feature_id) |
 | `VOLCANO_COMPARISONS` | `"all"` | Group pairs to compare; "all" runs all pairwise |
 | `VOLCANO_FC_THRESHOLD` | `1.0` | log2 fold-change cutoff (1.0 = 2-fold) |
 | `VOLCANO_P_THRESHOLD` | `0.05` | BH-adjusted p-value significance threshold |
 | `VOLCANO_TOP_LABELS` | `10` | Most significant features labelled in the volcano plot |
+| `RUN_COMPOUND_CLASSIFICATION` | `True` | Run the PubChem classification step in pipeline.py; set to `False` to skip entirely |
+| `RUN_CLASS_PLOTS` | `True` | Run the compound class pie chart step in pipeline.py; set to `False` to skip |
+| `CLASS_PIE_COLUMNS` | `["superclass", "npclassifier_pathway"]` | Columns from enriched metadata to visualise as pie charts |
+| `CLASS_PIE_GROUPS` | `"separate"` | `"separate"` = one pie per group; `"combined"` = one pie total; or a list of group names |
+| `CLASS_PIE_MIN_FRACTION` | `0.02` | Slices < this fraction merged into "Other" |
+| `CLASS_PIE_DETECTED_ONLY` | `True` | Count only features detected in the group; `False` = count all features |
+| `CLASS_HIGHLIGHT` | `[]` | List of `{"column", "value", "color"}` dicts; matching features highlighted in PCA loadings and volcano |
+| `CLASS_LABEL_COLUMN` | `""` | Column whose value is appended as `[class]` to feature labels in PCA loadings, bar chart, and volcano |
+| `PUBCHEM_CACHE_ONLY` | `False` | `True` = build output from local cache only, no network requests; compounds not yet cached are skipped. `False` = fetch missing entries from PubChem as normal |
+| `PUBCHEM_USER_AGENT` | `"TF_NT_pipeline/1.0 (...)"` | User-Agent header sent with all PubChem requests; replace `YOUR_EMAIL_HERE` |
+| `PUBCHEM_RATE_LIMIT_DELAY` | `0.35` | Seconds between PubChem requests (~2.9/sec, under the 5/sec limit) |
+| `CLASSYFIRE_RATE_LIMIT_DELAY` | `1.0` | Seconds between ClassyFire requests (no stated limit; 1.0 s is conservative) |
+| `NPCLASSIFIER_RATE_LIMIT_DELAY` | `1.0` | Seconds between NPClassifier requests (no stated limit; 1.0 s is conservative) |
+| `PUBCHEM_CACHE_FILE` | `"output/pubchem_cache.json"` | Local JSON cache; delete to force a full re-fetch |

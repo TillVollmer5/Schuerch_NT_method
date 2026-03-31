@@ -527,6 +527,30 @@ def run(cfg=config):
         back  = [c for c in audit_df.columns if c not in front]
         audit_df = audit_df[front + back]
 
+    # --- keyword filter (name / molecular formula) ---
+    exclude_keywords = [kw.lower() for kw in getattr(cfg, "BLANK_EXCLUDE_KEYWORDS", [])]
+    if exclude_keywords:
+        name_map    = meta["compound_name"].to_dict() if meta is not None and "compound_name" in meta.columns else {}
+        formula_map = {}
+        enriched_path = os.path.join(cfg.OUTPUT_DIR, "feature_metadata_enriched.csv")
+        if os.path.exists(enriched_path):
+            enriched = pd.read_csv(enriched_path, index_col="feature_id")
+            if "molecular_formula" in enriched.columns:
+                formula_map = enriched["molecular_formula"].dropna().to_dict()
+
+        kw_removed = []
+        for fid in list(corrected.index):
+            name    = str(name_map.get(fid, "")).lower()
+            formula = str(formula_map.get(fid, "")).lower()
+            if any(kw in name or kw in formula for kw in exclude_keywords):
+                kw_removed.append(fid)
+
+        if kw_removed:
+            corrected = corrected.drop(index=kw_removed, errors="ignore")
+            removed_fids = list(set(removed_fids) | set(kw_removed))
+            print(f"  keyword filter: {len(kw_removed)} feature(s) removed "
+                  f"(keywords: {', '.join(cfg.BLANK_EXCLUDE_KEYWORDS)})")
+
     # --- count outcomes ---
     n_removed = len(removed_fids)
     n_zeroed_cells = 0

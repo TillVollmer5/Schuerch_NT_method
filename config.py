@@ -123,6 +123,14 @@ BLANK_REFERENCE_MODE = "max"
 # "each" - each blank file is compared independently; a sample/group/mean fails
 #           if its fold change falls below FOLD_CHANGE_THRESHOLD for ANY blank file
 
+BLANK_EXCLUDE_KEYWORDS = ["silan", "Silan", "Si"]
+# Features whose compound name or molecular formula contains any of these
+# substrings (case-insensitive) are removed after blank correction.
+# Useful for stripping known instrument/column contaminants by name or element.
+# Examples:
+#   BLANK_EXCLUDE_KEYWORDS = ["silan", "Si"]   # removes siloxanes / Si-containing compounds
+#   BLANK_EXCLUDE_KEYWORDS = ["column", "phthalate"]
+
 # --- Normalization (normalization.py) -----------------------------------------
 NORMALIZATION = "sum"
 # "sum"    - divide each sample by its total signal (scaled to median column sum)
@@ -159,6 +167,25 @@ HCA_CMAP              = "vlag"       # diverging colormap suited to mean-centred
 HCA_MAX_FEATURE_LABELS = 50          # label the feature axis when n_features <= this value;
                                      # set to 0 to always hide feature labels
 
+HCA_CLASS_ANNOTATION_COLUMNS = ["superclass", "npclassifier_pathway"]
+# Columns from feature_metadata_enriched.csv to display as colored annotation
+# strips alongside the feature (column) dendrogram in the HCA heatmap.
+# Each entry produces one strip; strips reorder automatically with the dendrogram
+# so you can see which compound classes cluster together.
+# Set to [] to show no annotation strips.
+#
+# Recommended options for your data:
+#   ["superclass"]
+#   ["superclass", "npclassifier_pathway"]
+#   ["superclass", "npclassifier_pathway", "subclass"]
+#
+# Available columns (from feature_metadata_enriched.csv):
+#   "superclass"              - broad chemical class (Lipids, Benzenoids, ...)
+#   "npclassifier_pathway"    - biosynthetic pathway (Terpenoids, Fatty acids, ...)
+#   "subclass"                - more specific grouping (Sesquiterpenoids, ...)
+#   "npclassifier_class"      - NPClassifier class level
+#   "kingdom", "class", "direct_parent"  - other ClassyFire levels
+
 # --- Feature labelling (pca.py, hca.py, volcano.py) --------------------------
 COMPOUND_NAME_COL = "Component Name"   # column in TraceFinder CSVs holding compound names
                               # set to "" to disable name extraction
@@ -182,3 +209,116 @@ PCA_TOP_LOADINGS = 10   # number of top-loading features to label in the loading
 PCA_BAR_TOP      = 20   # number of features shown in the loading bar chart (pca_loadings_bar.png)
                         # selected by Euclidean distance in the PC_x/PC_y loading plane;
                         # increase to inspect more candidates (e.g. 20)
+
+# --- Compound class plots (compound_class_plots.py) --------------------------
+RUN_CLASS_PLOTS = True
+# Set to False to skip pie chart generation entirely in pipeline.py.
+
+CLASS_PIE_COLUMNS = ["superclass", "npclassifier_pathway"]
+# List of columns from feature_metadata_enriched.csv to visualise as pie charts.
+# Any column in that file is valid, e.g.:
+#   ["kingdom", "superclass", "class", "subclass", "direct_parent",
+#    "npclassifier_pathway", "npclassifier_superclass", "npclassifier_class"]
+
+CLASS_PIE_GROUPS = "separate"
+# Which samples to include in each pie:
+#   "separate" - one pie per group defined in SAMPLE_GROUPS
+#   "combined" - one pie across all samples
+#   ["S", "S-R"] - explicit list; only the listed groups are plotted
+
+CLASS_PIE_MIN_FRACTION = 0.02
+# Slices that represent less than this fraction of total features are merged
+# into an "Other" slice.  Set to 0.0 to show all slices.
+
+CLASS_PIE_DETECTED_ONLY = True
+# True  - count only features detected (area > 0) in at least one sample of
+#         the group (group-specific feature presence)
+# False - count all features in the enriched metadata regardless of detection
+
+# --- Class highlighting in PCA / volcano plots --------------------------------
+# Each entry colors all features matching the given column/value combination.
+# Highlighted features appear as colored dots in the PCA loadings scatter,
+# colored y-tick labels in the loadings bar chart, and colored ring outlines
+# on significant dots in the volcano plot.
+# Features matching multiple entries use the last matching color.
+#
+# Available superclass values in your data:
+#   "Lipids and lipid-like molecules"  "Phenylpropanoids and polyketides"
+#   "Benzenoids"                       "Organohalogen compounds"
+#   "Hydrocarbon derivatives"          "Hydrocarbons"
+#   "Organic oxygen compounds"         "Organic acids and derivatives"
+#   "Organoheterocyclic compounds"     "Organosulfur compounds"
+#   "Alkaloids and derivatives"        "Organophosphorus compounds"
+#
+# Available npclassifier_pathway values in your data:
+#   "Terpenoids"   "Fatty acids"   "Polyketides"
+#   "Shikimates and Phenylpropanoids"   "Alkaloids"
+#
+# Available subclass values (selection):
+#   "Sesquiterpenoids"  "Monoterpenoids"  "Diterpenoids"  "Triterpenoids"
+#   "Fatty acids and conjugates"  "Fatty alcohols"  "Fatty acid esters"
+#   "Organohalogen compounds"
+
+CLASS_HIGHLIGHT = [
+    # Uncomment and edit to activate highlighting.  Use any column from
+    # feature_metadata_enriched.csv and any value listed above.
+    {"column": "subclass",             "value": "Sesquiterpenoids",                    "color": "#2ecc71"},
+
+    # {"column": "subclass",             "value": "Sesquiterpenoids",                    "color": "#2ecc71"},
+    # {"column": "subclass",             "value": "Monoterpenoids",                      "color": "#3498db"},
+    # {"column": "npclassifier_pathway", "value": "Terpenoids",                          "color": "#e67e22"},
+    # {"column": "superclass",           "value": "Organohalogen compounds",             "color": "#e74c3c"},
+    # {"column": "superclass",           "value": "Phenylpropanoids and polyketides",    "color": "#9b59b6"},
+]
+
+CLASS_LABEL_COLUMN = "subclass"
+# When non-empty, the value from this column is appended to feature labels in
+# the PCA loadings scatter, loadings bar chart, and volcano plot as "[class]",
+# e.g. "F042 [Sesquiterpenoids]".
+# Only applied when the column has a non-NaN value for that feature.
+#
+# Recommended options for your data:
+#   CLASS_LABEL_COLUMN = "subclass"            # most specific useful level
+#   CLASS_LABEL_COLUMN = "superclass"          # broader grouping
+#   CLASS_LABEL_COLUMN = "npclassifier_class"  # NP biosynthetic class
+
+# --- Compound classification (compound_classification.py) --------------------
+RUN_COMPOUND_CLASSIFICATION = True
+# Set to False to skip the PubChem classification step entirely in pipeline.py.
+
+PUBCHEM_CACHE_ONLY = True
+# True  - build the output from the local cache only; no network requests are
+#         made.  Compounds not yet in the cache are marked "unnamed" in the
+#         output instead of being queried.  Use this when you are offline, want
+#         a fast re-run, or simply want to regenerate the output CSVs without
+#         consuming API quota.
+# False - fetch missing entries from PubChem as normal (first run or after
+#         deleting the cache file).  Already-cached entries are still served
+#         from the cache and never re-fetched.
+
+PUBCHEM_USER_AGENT = "Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; contact: till.vollmer@unibe.ch)"
+# Replace YOUR_EMAIL_HERE with your real email address.
+# PubChem's usage policy requests a descriptive User-Agent so they can contact
+# you if your script causes unexpected server load.
+# Policy: https://pubchemdocs.ncbi.nlm.nih.gov/programmatic-access
+
+PUBCHEM_RATE_LIMIT_DELAY = 3
+# Seconds to sleep before each PubChem API request.
+# PubChem's stated limit is 5 requests/sec; 0.35 s gives ~2.9/sec (conservative).
+# Increase (e.g. to 0.5) if you receive frequent 503 responses.
+
+CLASSYFIRE_RATE_LIMIT_DELAY = 3
+# Seconds to sleep before each ClassyFire API request (classyfire.wishartlab.com).
+# No stated rate limit; 2.0 s is conservative — 1.0 s has been observed to
+# trigger HTTP 429 (Too Many Requests) responses from this academic server.
+
+NPCLASSIFIER_RATE_LIMIT_DELAY = 3
+# Seconds to sleep before each NPClassifier API request (npclassifier.gnps2.org).
+# No stated rate limit; 1.0 s is conservative and well-mannered.
+
+PUBCHEM_CACHE_FILE = "output/pubchem_cache.json"
+# Path to the local JSON cache for API responses.
+# The cache stores: compound name -> CID, CID -> properties,
+#                   CID -> SMILES + InChIKey, CID -> ClassyFire taxonomy,
+#                   CID -> NPClassifier annotations.
+# Delete this file (or a specific entry inside it) to force a re-fetch.
