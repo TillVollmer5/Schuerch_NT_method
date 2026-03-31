@@ -23,7 +23,12 @@ and the final plots.
 3. [Step 2 — Blank correction](#3-step-2--blank-correction)
    - 3.1 [Optional m/z gate](#31-optional-mz-gate)
    - 3.2 [Fold-change filter](#32-fold-change-filter)
-4. [Step 3 — Normalization, transformation, and scaling](#4-step-3--normalization-transformation-and-scaling)
+4. [Step 2b — Prevalence histogram](#4-step-2b--prevalence-histogram)
+   - 4.1 [Prevalence calculation](#41-prevalence-calculation)
+   - 4.2 [Bin alignment and x-axis scaling](#42-bin-alignment-and-x-axis-scaling)
+   - 4.3 [Threshold reference lines](#43-threshold-reference-lines)
+   - 4.4 [Outputs](#44-outputs)
+5. [Step 3 — Normalization, transformation, and scaling](#5-step-3--normalization-transformation-and-scaling)
    - 4.1 [Prevalence filter](#41-prevalence-filter)
    - 4.2 [Exclusion list (PCA matrix only)](#42-exclusion-list-pca-matrix-only)
    - 4.3 [Sum normalization](#43-sum-normalization)
@@ -32,24 +37,24 @@ and the final plots.
    - 4.6 [Pareto scaling (recommended)](#46-pareto-scaling-recommended)
    - 4.7 [Auto scaling (alternative)](#47-auto-scaling-alternative)
    - 4.8 [Two output matrices](#48-two-output-matrices)
-5. [Step 4 — Principal Component Analysis (PCA)](#5-step-4--principal-component-analysis-pca)
-   - 5.1 [Algorithm](#51-algorithm)
-   - 5.2 [Scores plot and confidence ellipses](#52-scores-plot-and-confidence-ellipses)
-   - 5.3 [Loadings plot and bar chart](#53-loadings-plot-and-bar-chart)
-6. [Step 5 — Hierarchical Cluster Analysis (HCA)](#6-step-5--hierarchical-cluster-analysis-hca)
-   - 6.1 [Algorithm and linkage](#61-algorithm-and-linkage)
-   - 6.2 [Heatmap construction](#62-heatmap-construction)
-7. [Step 6 — Volcano plot](#7-step-6--volcano-plot)
-   - 7.1 [Normalization for volcano (no Pareto scaling)](#71-normalization-for-volcano-no-pareto-scaling)
-   - 7.2 [Log2 fold change](#72-log2-fold-change)
-   - 7.3 [Mann-Whitney U test](#73-mann-whitney-u-test)
-   - 7.4 [Benjamini-Hochberg FDR correction](#74-benjamini-hochberg-fdr-correction)
-   - 7.5 [Classification and thresholds](#75-classification-and-thresholds)
-8. [Report — Blank contaminants](#8-report--blank-contaminants)
-9. [Report — Top PCA features](#9-report--top-pca-features)
-10. [Feature labelling (compound names)](#10-feature-labelling-compound-names)
-11. [Assumptions summary](#11-assumptions-summary)
-12. [Key parameter reference](#12-key-parameter-reference)
+6. [Step 4 — Principal Component Analysis (PCA)](#6-step-4--principal-component-analysis-pca)
+   - 6.1 [Algorithm](#61-algorithm)
+   - 6.2 [Scores plot and confidence ellipses](#62-scores-plot-and-confidence-ellipses)
+   - 6.3 [Loadings plot and bar chart](#63-loadings-plot-and-bar-chart)
+7. [Step 5 — Hierarchical Cluster Analysis (HCA)](#7-step-5--hierarchical-cluster-analysis-hca)
+   - 7.1 [Algorithm and linkage](#71-algorithm-and-linkage)
+   - 7.2 [Heatmap construction](#72-heatmap-construction)
+8. [Step 6 — Volcano plot](#8-step-6--volcano-plot)
+   - 8.1 [Normalization for volcano (no Pareto scaling)](#81-normalization-for-volcano-no-pareto-scaling)
+   - 8.2 [Log2 fold change](#82-log2-fold-change)
+   - 8.3 [Mann-Whitney U test](#83-mann-whitney-u-test)
+   - 8.4 [Benjamini-Hochberg FDR correction](#84-benjamini-hochberg-fdr-correction)
+   - 8.5 [Classification and thresholds](#85-classification-and-thresholds)
+9. [Report — Blank contaminants](#9-report--blank-contaminants)
+10. [Report — Top PCA features](#10-report--top-pca-features)
+11. [Feature labelling (compound names)](#11-feature-labelling-compound-names)
+12. [Assumptions summary](#12-assumptions-summary)
+13. [Key parameter reference](#13-key-parameter-reference)
 
 ---
 
@@ -84,6 +89,15 @@ Step 2  blank_correction.py
         v  peak_matrix_blank_corrected.csv
            blank_correction_audit.csv
            features_removed_blank.csv (backward-compat summary)
+        |
+        v
+Step 2b prevalence_histogram.py
+        - reads blank-corrected matrix
+        - computes per-feature detection fraction across all samples
+        - produces histogram with bin edges aligned to 1/N_samples steps
+        - annotates PCA / HCA prevalence threshold lines from config.py
+        -> prevalence_histogram.png
+        -> prevalence_summary.csv
         |
         v
 Step 3  normalization.py
@@ -544,7 +558,92 @@ tools that read the old pipeline output format.
 
 ---
 
-## 4. Step 3 — Normalization, transformation, and scaling
+## 4. Step 2b — Prevalence histogram
+
+**Script:** `prevalence_histogram.py`
+**Input:** `peak_matrix_blank_corrected.csv`
+**Output:** `output/plots/prevalence_histogram.png`, `output/prevalence_summary.csv`
+
+This diagnostic step runs immediately after blank correction and before
+normalization. It characterises *how consistently* each feature is detected
+across all samples, giving the user a quantitative basis for choosing the
+`MIN_PREVALENCE_PCA` and `MIN_PREVALENCE_HCA` thresholds in `config.py`.
+
+---
+
+### 4.1 Prevalence calculation
+
+For each feature (row in the blank-corrected matrix), the script counts the
+number of samples in which the feature area is greater than zero:
+
+```
+detected_count_i  = Σ_j  [area_ij > 0]
+prevalence_i      = detected_count_i / N_samples
+```
+
+`prevalence_i` is a value in `{0/N, 1/N, 2/N, …, N/N}` — a discrete set of
+`N+1` possible values, where `N` is the total number of sample columns in the
+matrix (blanks excluded). A feature with `prevalence = 1.0` is detected in
+every sample; `prevalence = 0.0` means the feature was zeroed by blank
+correction in all samples and is effectively absent.
+
+---
+
+### 4.2 Bin alignment and x-axis scaling
+
+Because prevalence can only take values at integer multiples of `1/N`, a
+standard fixed-width histogram would misalign bars with the true data points
+when `N` is not a divisor of 10 or 100. The script instead places bin edges at:
+
+```
+edges_k = (k − 0.5) / N    for k = 0, 1, …, N+1
+```
+
+This centres each bar exactly on the corresponding `k/N` value. The x-axis
+automatically adapts to any number of samples:
+
+- **N ≤ 20:** every tick is labelled as `k/N (xx%)`.
+- **N > 20:** ticks are thinned to approximately 10 evenly-spaced labels to
+  prevent overplotting, always including the endpoints `0/N` and `N/N`.
+
+Each non-empty bar is annotated with its feature count directly above.
+
+---
+
+### 4.3 Threshold reference lines
+
+Vertical lines are drawn at the prevalence thresholds configured in
+`config.py`, shifted to the left edge of the first included bin so the line
+marks exactly where the filter cuts:
+
+| Line style | Parameter | Colour |
+|------------|-----------|--------|
+| Dashed | `MIN_PREVALENCE_PCA` | Red |
+| Dotted | `MIN_PREVALENCE_HCA` | Orange |
+| Dash-dot | `MIN_PREVALENCE_VOLCANO` | Green |
+
+Lines with a threshold of `0.0` are omitted (no filter applied). This lets
+the researcher see at a glance how many features fall below each threshold
+and adjust accordingly before committing to normalization.
+
+---
+
+### 4.4 Outputs
+
+**`prevalence_histogram.png`** — bar chart of `# features` (y-axis) vs
+`prevalence` (x-axis), one bar per unique `k/N` detection level.
+
+**`prevalence_summary.csv`** — tabular version with columns:
+
+| Column | Description |
+|--------|-------------|
+| `n_samples_detected` | Integer k — number of samples in which the feature was detected |
+| `prevalence` | `k / N_samples` |
+| `n_features` | Number of features at exactly this prevalence level |
+
+---
+
+## 5. Step 3 — Normalization, transformation, and scaling
 
 **Script:** `normalization.py`
 **Input:** `peak_matrix_blank_corrected.csv`, `feature_metadata.csv`
@@ -753,7 +852,7 @@ a reference to the same object (not duplicated in memory).
 
 ---
 
-## 5. Step 4 — Principal Component Analysis (PCA)
+## 6. Step 4 — Principal Component Analysis (PCA)
 
 **Script:** `pca.py`
 **Input:** `peak_matrix_processed_pca.csv`, `sample_groups.csv`
@@ -863,7 +962,7 @@ used as axis labels and annotations in place of feature IDs.
 
 ---
 
-## 6. Step 5 — Hierarchical Cluster Analysis (HCA)
+## 7. Step 5 — Hierarchical Cluster Analysis (HCA)
 
 **Script:** `hca.py`
 **Input:** `peak_matrix_processed.csv` (full feature set), `sample_groups.csv`
@@ -939,7 +1038,7 @@ the row and column dendrograms respectively. This order is useful for:
 
 ---
 
-## 7. Step 6 — Volcano plot
+## 8. Step 6 — Volcano plot
 
 **Script:** `volcano.py`
 **Input:** `peak_matrix_blank_corrected.csv` (raw blank-corrected areas),
@@ -1105,7 +1204,7 @@ re-running the analysis.
 
 ---
 
-## 8. Report — Blank contaminants
+## 9. Report — Blank contaminants
 
 **Script:** `blank_contaminants_report.py`
 **Input:** `blank_correction_audit.csv`, `feature_name_map.csv`
@@ -1163,7 +1262,7 @@ triggered it. This report restores full provenance:
 
 ---
 
-## 9. Report — Top PCA features
+## 10. Report — Top PCA features
 
 **Script:** `top_features_analysis.py`
 **Input:** `pca_loadings.csv`, `peak_matrix_raw.csv`, `feature_metadata.csv`,
@@ -1218,7 +1317,7 @@ python top_features_analysis.py --n 20  # top 20 features
 
 ---
 
-## 10. Feature labelling (compound names)
+## 11. Feature labelling (compound names)
 
 **Config:** `COMPOUND_NAME_COL`, `FEATURE_LABEL`
 
@@ -1252,7 +1351,7 @@ back to `feature_metadata.csv` and `feature_peak_log.csv` unambiguously.
 
 ---
 
-## 11. Assumptions summary
+## 12. Assumptions summary
 
 The following is a consolidated list of the key assumptions embedded in the
 pipeline design. Violating these assumptions does not always produce wrong
@@ -1303,7 +1402,7 @@ results, but the user should be aware of them when interpreting output.
 
 ---
 
-## 12. Key parameter reference
+## 13. Key parameter reference
 
 | Parameter | Default | Step | Description |
 |-----------|---------|------|-------------|
@@ -1347,5 +1446,5 @@ results, but the user should be aware of them when interpreting output.
 
 ---
 
-*Generated for pipeline version as of 2026-03-24. All formulae are derived
+*Generated for pipeline version as of 2026-03-31. All formulae are derived
 directly from the Python source code; parameters refer to `config.py`.*

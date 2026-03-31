@@ -89,7 +89,7 @@ EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
 #        Filtering by overall prevalence would remove exactly those features.
 
 MIN_PREVALENCE_PCA     = 0.35   # e.g. 0.5 = detected in >= 50% of all samples
-MIN_PREVALENCE_HCA     = 0.0   # set > 0 to drop sparse features from the heatmap
+MIN_PREVALENCE_HCA     = 0.2   # set > 0 to drop sparse features from the heatmap
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
 # --- Blank correction (blank_correction.py) -----------------------------------
