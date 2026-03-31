@@ -9,6 +9,7 @@ data exported from **Thermo TraceFinder** (Orbitrap MS).
 |------|--------|----------------|
 | 1 | `data_import.py` | TraceFinder CSVs -> `peak_matrix_raw.csv` |
 | 2 | `blank_correction.py` | raw matrix -> `peak_matrix_blank_corrected.csv` |
+| 2b | `prevalence_histogram.py` | `peak_matrix_blank_corrected.csv` -> `prevalence_histogram.png` + `prevalence_summary.csv` |
 | 3 | `normalization.py` | blank-corrected -> `peak_matrix_processed.csv` + `peak_matrix_processed_pca.csv` |
 | 4 | `pca.py` | `peak_matrix_processed_pca.csv` -> scores/loadings plots & CSVs |
 | 5 | `hca.py` | `peak_matrix_processed.csv` -> clustered heatmap + dendrogram order CSVs |
@@ -82,9 +83,10 @@ python pipeline.py
 Or run individual steps independently (useful when re-running after parameter changes):
 
 ```bash
-python data_import.py        # Step 1 - re-run if data or RT_MARGIN changes
-python blank_correction.py   # Step 2 - re-run if FOLD_CHANGE_THRESHOLD changes
-python normalization.py      # Step 3 - re-run if NORMALIZATION, SCALING, or EXCLUSION_LIST changes
+python data_import.py           # Step 1  - re-run if data or RT_MARGIN changes
+python blank_correction.py      # Step 2  - re-run if FOLD_CHANGE_THRESHOLD changes
+python prevalence_histogram.py  # Step 2b - re-run after blank correction to review detection rates
+python normalization.py         # Step 3  - re-run if NORMALIZATION, SCALING, or EXCLUSION_LIST changes
 python pca.py                # Step 4 - re-run if PCA settings change
 python hca.py                # Step 5 - re-run if HCA_LINKAGE or HCA_METRIC changes
 python volcano.py            # Step 6 - re-run if VOLCANO_* thresholds change
@@ -131,6 +133,9 @@ output/
 |-- features_removed_zero_variance.csv   features dropped by scaling (zero variance after log2)
 |                                        (only when any are removed)
 |
+|-- prevalence_summary.csv               per-prevalence-level feature counts
+|                                        (n_samples_detected, prevalence, n_features)
+|
 |-- pca_scores.csv                       sample scores for all N_COMPONENTS
 |-- pca_loadings.csv                     feature loadings for all N_COMPONENTS
 |-- pca_variance.csv                     explained variance per component
@@ -143,6 +148,8 @@ output/
 |-- blank_contaminants_report.csv        blank-removed features with compound name,
 |                                        RT, m/z, max blank area, and sample list
 |-- plots/
+    |-- prevalence_histogram.png         feature prevalence distribution; one bar per k/N
+    |                                    detection level; reference lines for PCA/HCA thresholds
     |-- pca_scores.png                   scores scatter plot with group ellipses
     |-- pca_loadings.png                 loadings scatter plot (top features labelled)
     |-- pca_loadings_bar.png             grouped loading bar chart (top N features)

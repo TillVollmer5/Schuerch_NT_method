@@ -3,12 +3,15 @@ pipeline.py - End-to-end GCMS data processing pipeline.
 
 Runs all processing steps in sequence:
 
-  Step 1  data_import.py       -> output/peak_matrix_raw.csv
-  Step 2  blank_correction.py  -> output/peak_matrix_blank_corrected.csv
-  Step 3  normalization.py     -> output/peak_matrix_processed.csv
-  Step 4  pca.py               -> output/plots/pca_scores.png + loadings
-  Step 5  hca.py               -> output/plots/hca_heatmap.png + dendrogram orders
-  Step 6  volcano.py           -> output/plots/volcano_*.png + results tables
+  Step 1  data_import.py            -> output/peak_matrix_raw.csv
+  Step 2  blank_correction.py       -> output/peak_matrix_blank_corrected.csv
+  Step 2b prevalence_histogram.py   -> output/plots/prevalence_histogram.png
+  Step 3  normalization.py          -> output/peak_matrix_processed.csv
+  Step 4  pca.py                    -> output/plots/pca_scores.png + loadings
+  Step 5  hca.py                    -> output/plots/hca_heatmap.png + dendrogram orders
+  Step 6  volcano.py                -> output/plots/volcano_*.png + results tables
+  Step 7  top_features_analysis.py  -> output/top_features_analysis.csv
+  Step 8  blank_contaminants_report.py -> output/blank_contaminants_report.csv
 
 All parameters are read from config.py. Edit config.py to adapt the
 pipeline to a new sample series without changing any processing code.
@@ -19,6 +22,7 @@ Usage:
 To run individual steps:
     python data_import.py
     python blank_correction.py
+    python prevalence_histogram.py
     python normalization.py
     python pca.py
     python hca.py
@@ -36,6 +40,7 @@ if os.path.exists(venv_py) and not sys.executable.startswith(os.path.join(here, 
 import config
 import data_import
 import blank_correction
+import prevalence_histogram as prevalence_histogram_step
 import normalization
 import pca as pca_step
 import hca as hca_step
@@ -61,6 +66,8 @@ def main():
     data_import.run(config)
     print()
     blank_correction.run(config)
+    print()
+    prevalence_histogram_step.run(config)
     print()
     normalization.run(config)
     print()
