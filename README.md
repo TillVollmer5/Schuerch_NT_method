@@ -201,6 +201,7 @@ output/
 | `HCA_METRIC` | `"euclidean"` | Distance metric for HCA |
 | `HCA_CMAP` | `"vlag"` | Colormap for heatmap (diverging, suited to scaled data) |
 | `HCA_MAX_FEATURE_LABELS` | `50` | Show feature axis labels when n_features <= this |
+| `HCA_CLASS_ANNOTATION_COLUMNS` | `[]` | Columns from enriched metadata to show as colored annotation strips alongside the feature dendrogram; e.g. `["superclass", "npclassifier_pathway"]` |
 | `COMPOUND_NAME_COL` | `"Name"` | Column in TraceFinder CSVs holding compound names; `""` to disable |
 | `FEATURE_LABEL` | `"id"` | `"id"` = use feature_id in plots; `"name"` = use compound name (falls back to feature_id) |
 | `VOLCANO_COMPARISONS` | `"all"` | Group pairs to compare; "all" runs all pairwise |

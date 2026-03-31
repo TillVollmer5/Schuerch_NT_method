@@ -167,6 +167,25 @@ HCA_CMAP              = "vlag"       # diverging colormap suited to mean-centred
 HCA_MAX_FEATURE_LABELS = 50          # label the feature axis when n_features <= this value;
                                      # set to 0 to always hide feature labels
 
+HCA_CLASS_ANNOTATION_COLUMNS = ["superclass", "npclassifier_pathway"]
+# Columns from feature_metadata_enriched.csv to display as colored annotation
+# strips alongside the feature (column) dendrogram in the HCA heatmap.
+# Each entry produces one strip; strips reorder automatically with the dendrogram
+# so you can see which compound classes cluster together.
+# Set to [] to show no annotation strips.
+#
+# Recommended options for your data:
+#   ["superclass"]
+#   ["superclass", "npclassifier_pathway"]
+#   ["superclass", "npclassifier_pathway", "subclass"]
+#
+# Available columns (from feature_metadata_enriched.csv):
+#   "superclass"              - broad chemical class (Lipids, Benzenoids, ...)
+#   "npclassifier_pathway"    - biosynthetic pathway (Terpenoids, Fatty acids, ...)
+#   "subclass"                - more specific grouping (Sesquiterpenoids, ...)
+#   "npclassifier_class"      - NPClassifier class level
+#   "kingdom", "class", "direct_parent"  - other ClassyFire levels
+
 # --- Feature labelling (pca.py, hca.py, volcano.py) --------------------------
 COMPOUND_NAME_COL = "Component Name"   # column in TraceFinder CSVs holding compound names
                               # set to "" to disable name extraction
