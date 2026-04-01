@@ -15,6 +15,7 @@ data exported from **Thermo TraceFinder** (Orbitrap MS).
 | 3 | `normalization.py` | blank-corrected -> `peak_matrix_processed.csv` + `peak_matrix_processed_pca.csv` |
 | 4 | `pca.py` | `peak_matrix_processed_pca.csv` -> scores/loadings plots & CSVs |
 | 5 | `hca.py` | `peak_matrix_processed.csv` -> clustered heatmap + dendrogram order CSVs |
+| 5b | `hca_dendrogram.py` | `peak_matrix_processed.csv` -> `hca_dendrogram.html` *(interactive; see `RUN_HCA_DENDROGRAM`)* |
 | 6 | `volcano.py` | `peak_matrix_blank_corrected.csv` -> volcano plots & results tables |
 | 7 | `top_features_analysis.py` | `pca_loadings.csv` + raw CSVs -> `top_features_analysis.csv` |
 | 8 | `blank_contaminants_report.py` | `features_removed_blank.csv` + provenance files -> `blank_contaminants_report.csv` |
@@ -202,6 +203,7 @@ output/
 | `HCA_CMAP` | `"vlag"` | Colormap for heatmap (diverging, suited to scaled data) |
 | `HCA_MAX_FEATURE_LABELS` | `50` | Show feature axis labels when n_features <= this |
 | `HCA_CLASS_ANNOTATION_COLUMNS` | `[]` | Columns from enriched metadata to show as colored annotation strips alongside the feature dendrogram; e.g. `["superclass", "npclassifier_pathway"]` |
+| `RUN_HCA_DENDROGRAM` | `True` | Generate the interactive HTML dendrogram (Step 5b); set to `False` to skip |
 | `COMPOUND_NAME_COL` | `"Name"` | Column in TraceFinder CSVs holding compound names; `""` to disable |
 | `FEATURE_LABEL` | `"id"` | `"id"` = use feature_id in plots; `"name"` = use compound name (falls back to feature_id) |
 | `VOLCANO_COMPARISONS` | `"all"` | Group pairs to compare; "all" runs all pairwise |

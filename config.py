@@ -89,7 +89,7 @@ EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
 #        Filtering by overall prevalence would remove exactly those features.
 
 MIN_PREVALENCE_PCA     = 0.35   # e.g. 0.5 = detected in >= 50% of all samples
-MIN_PREVALENCE_HCA     = 0.2   # set > 0 to drop sparse features from the heatmap
+MIN_PREVALENCE_HCA     = 0.35   # set > 0 to drop sparse features from the heatmap
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
 # --- Blank correction (blank_correction.py) -----------------------------------
@@ -167,6 +167,10 @@ HCA_CMAP              = "vlag"       # diverging colormap suited to mean-centred
 HCA_MAX_FEATURE_LABELS = 50          # label the feature axis when n_features <= this value;
                                      # set to 0 to always hide feature labels
 
+RUN_HCA_DENDROGRAM = True
+# Set to False to skip the interactive HTML dendrogram (Step 5b) in pipeline.py.
+# Produces hca_dendrogram.html — no server needed, opens in any browser.
+
 HCA_CLASS_ANNOTATION_COLUMNS = ["superclass", "npclassifier_pathway"]
 # Columns from feature_metadata_enriched.csv to display as colored annotation
 # strips alongside the feature (column) dendrogram in the HCA heatmap.
@@ -214,7 +218,7 @@ PCA_BAR_TOP      = 20   # number of features shown in the loading bar chart (pca
 RUN_CLASS_PLOTS = True
 # Set to False to skip pie chart generation entirely in pipeline.py.
 
-CLASS_PIE_COLUMNS = ["superclass", "npclassifier_pathway"]
+CLASS_PIE_COLUMNS = ["superclass", "npclassifier_pathway", "npclassifier_class", "subclass"]
 # List of columns from feature_metadata_enriched.csv to visualise as pie charts.
 # Any column in that file is valid, e.g.:
 #   ["kingdom", "superclass", "class", "subclass", "direct_parent",
@@ -263,10 +267,8 @@ CLASS_HIGHLIGHT = [
     # Uncomment and edit to activate highlighting.  Use any column from
     # feature_metadata_enriched.csv and any value listed above.
     {"column": "subclass",             "value": "Sesquiterpenoids",                    "color": "#2ecc71"},
-
-    # {"column": "subclass",             "value": "Sesquiterpenoids",                    "color": "#2ecc71"},
-    # {"column": "subclass",             "value": "Monoterpenoids",                      "color": "#3498db"},
-    # {"column": "npclassifier_pathway", "value": "Terpenoids",                          "color": "#e67e22"},
+    {"column": "subclass",             "value": "Monoterpenoids",                      "color": "#3498db"},
+    {"column": "npclassifier_pathway", "value": "Terpenoids",                          "color": "#e67e22"},
     # {"column": "superclass",           "value": "Organohalogen compounds",             "color": "#e74c3c"},
     # {"column": "superclass",           "value": "Phenylpropanoids and polyketides",    "color": "#9b59b6"},
 ]
@@ -302,7 +304,7 @@ PUBCHEM_USER_AGENT = "Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; c
 # you if your script causes unexpected server load.
 # Policy: https://pubchemdocs.ncbi.nlm.nih.gov/programmatic-access
 
-PUBCHEM_RATE_LIMIT_DELAY = 3
+PUBCHEM_RATE_LIMIT_DELAY = 1
 # Seconds to sleep before each PubChem API request.
 # PubChem's stated limit is 5 requests/sec; 0.35 s gives ~2.9/sec (conservative).
 # Increase (e.g. to 0.5) if you receive frequent 503 responses.

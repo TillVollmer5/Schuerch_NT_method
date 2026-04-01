@@ -13,6 +13,7 @@ Runs all processing steps in sequence:
   Step 3  normalization.py          -> output/peak_matrix_processed.csv
   Step 4  pca.py                    -> output/plots/pca_scores.png + loadings
   Step 5  hca.py                    -> output/plots/hca_heatmap.png + dendrogram orders
+  Step 5b hca_dendrogram.py         -> output/plots/hca_dendrogram.html (interactive)
   Step 6  volcano.py                -> output/plots/volcano_*.png + results tables
   Step 7  top_features_analysis.py  -> output/top_features_analysis.csv
   Step 8  blank_contaminants_report.py -> output/blank_contaminants_report.csv
@@ -52,6 +53,7 @@ import compound_class_plots as compound_class_plots_step
 import normalization
 import pca as pca_step
 import hca as hca_step
+import hca_dendrogram as hca_dendrogram_step
 import volcano as volcano_step
 import top_features_analysis as top_features_analysis_step
 import blank_contaminants_report as blank_contaminants_report_step
@@ -89,6 +91,9 @@ def main():
     print()
     hca_step.run(config)
     print()
+    if getattr(config, "RUN_HCA_DENDROGRAM", True):
+        hca_dendrogram_step.run(config)
+        print()
     volcano_step.run(config)
     print()
     top_features_analysis_step.run(config)
