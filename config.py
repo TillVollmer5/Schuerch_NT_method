@@ -54,22 +54,25 @@ VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 #   3.086,   # Chloroiodomethane
 #   4.044,   # 3-Hexenal
 
-EXCLUSION_LIST = [19.071,
-13.587,
-14.010,
-26.229,
-4.043,
-5.643,
-5.690,
-10.614,
-23.321,
-22.810,
-8.090,
-9.529,
-11.290,
-10.591,
-11.918,
-10.072
+EXCLUSION_LIST = [5.997,#3-Hexenal
+7.735, #2-Hexenal, (E)-
+7.801, #3-Hexen-1-ol, formate, (Z)-
+8.958, #Styrene
+10.43, #.alpha.-Thujene
+11.934,#2,3-Diazabicyclo[2.2.1]hept-2-ene, 5-ethenyl-4,7,7-trimethyl-, (1.alpha.,4.alpha.,5.beta.)-
+12.88, #3-Hexen-1-ol, acetate, (Z)-
+13.205,#2-Hexen-1-ol, acetate, (E)-
+13.522,#p-Cymene
+13.665,#2-Undecenal, E-
+14.254,#trans-.beta.-Ocimene
+15.93, #Linalool
+16.375,#4,8-DIMETHYLNONA-1,3,7-TRIENE
+21.529,#Indole
+25.049,#(-)-(E)-Caryophyllene
+25.38, #trans-.alpha.-Bergamotene
+25.828,#Isogermacrene D
+28.763 #(3E,7E)-4,8,12-Trimethyltrideca-1,3,7,11-tetraene
+
 ]
 
 EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
