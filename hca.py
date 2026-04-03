@@ -161,8 +161,23 @@ def _build_col_colors(cfg, feature_ids):
                 .replace("nan", "Unknown"))
 
         unique_known = sorted(v for v in vals.unique() if v != "Unknown")
-        palette      = sns.color_palette("tab20", max(len(unique_known), 1))
-        color_map    = {v: tuple(palette[i]) for i, v in enumerate(unique_known)}
+
+        # seed color_map from CLASS_HIGHLIGHT rules that target this column
+        # (last rule wins, matching the PCA/volcano behavior)
+        highlight_rules = getattr(cfg, "CLASS_HIGHLIGHT", [])
+        color_map = {}
+        for rule in highlight_rules:
+            if rule.get("column") == col and rule.get("value") in unique_known:
+                hex_col = rule["color"].lstrip("#")
+                rgb = tuple(int(hex_col[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+                color_map[rule["value"]] = rgb
+
+        # assign tab20 colors for any values not covered by CLASS_HIGHLIGHT
+        unassigned = [v for v in unique_known if v not in color_map]
+        palette    = sns.color_palette("tab20", max(len(unassigned), 1))
+        for i, v in enumerate(unassigned):
+            color_map[v] = tuple(palette[i])
+
         color_map["Unknown"] = gray
 
         result_cols[col] = vals.map(color_map)

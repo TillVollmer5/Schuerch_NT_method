@@ -38,6 +38,7 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")          # non-interactive backend - no display needed
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 from sklearn.decomposition import PCA
 
@@ -521,6 +522,91 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
     plt.close(fig)
 
 
+# --- Standalone class highlight legend ----------------------------------------
+
+def plot_class_legend(cfg, output_path):
+    """
+    Save a standalone PNG legend for all CLASS_HIGHLIGHT color assignments.
+
+    Entries are grouped by annotation column (e.g. "subclass",
+    "npclassifier_pathway") with a bold subheading per column, followed by
+    one colored swatch + label per defined value.  An "Unclassified" entry
+    at the bottom shows the default grey used for non-highlighted features.
+
+    Silently returns without writing a file when CLASS_HIGHLIGHT is empty.
+
+    Visual style matches hca_class_legend.png (_save_class_legend in hca.py).
+    """
+    from collections import OrderedDict
+
+    rules = getattr(cfg, "CLASS_HIGHLIGHT", [])
+    if not rules:
+        return
+
+    # group rules by column, preserving first-appearance order
+    sections = OrderedDict()
+    for rule in rules:
+        col   = rule.get("column", "")
+        val   = rule.get("value",  "")
+        color = rule.get("color",  "#cccccc")
+        if not col or not val:
+            continue
+        sections.setdefault(col, {})[val] = color
+    # append "Unclassified" sentinel as its own section
+    sections["Unclassified"] = {"non-highlighted features": (0.33, 0.33, 0.33)}
+
+    if not sections:
+        return
+
+    # layout constants — identical to hca._save_class_legend
+    PATCH_H = 0.30
+    TITLE_H = 0.38
+    PAD     = 0.20
+    LEFT    = 0.15
+    FIG_W   = 4.2
+
+    total_h = PAD
+    for title, mapping in sections.items():
+        total_h += TITLE_H + len(mapping) * PATCH_H + PAD
+    total_h = max(total_h, 1.5)
+
+    fig, ax = plt.subplots(figsize=(FIG_W, total_h))
+    ax.set_xlim(0, FIG_W)
+    ax.set_ylim(0, total_h)
+    ax.axis("off")
+
+    y = total_h - PAD   # start from top, step downward
+
+    for section_title, mapping in sections.items():
+        y -= TITLE_H
+        ax.text(
+            LEFT, y + TITLE_H * 0.35,
+            section_title,
+            fontsize=10, fontweight="bold", va="center",
+        )
+        ax.plot([LEFT, FIG_W - LEFT], [y + TITLE_H * 0.05, y + TITLE_H * 0.05],
+                color="0.75", lw=0.6)
+
+        for label, color in mapping.items():
+            y -= PATCH_H
+            rect = mpatches.FancyBboxPatch(
+                (LEFT, y + PATCH_H * 0.15),
+                PATCH_H * 0.65, PATCH_H * 0.65,
+                boxstyle="round,pad=0.02",
+                facecolor=color, edgecolor="0.4", linewidth=0.5,
+            )
+            ax.add_patch(rect)
+            ax.text(
+                LEFT + PATCH_H * 0.85, y + PATCH_H * 0.5,
+                str(label),
+                fontsize=8.5, va="center",
+            )
+        y -= PAD
+
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 # --- Interactive 3D plots (only when N_COMPONENTS == 3) ----------------------
 
 def plot_scores_3d(scores_df, group_series, variance_df, output_path):
@@ -750,6 +836,12 @@ def run(cfg=config):
                       highlight_map=highlight_map,
                       class_label_map=class_label_map)
     print(f"  -> {out_bar}")
+
+    # standalone class highlight legend (only when CLASS_HIGHLIGHT is non-empty)
+    if getattr(cfg, "CLASS_HIGHLIGHT", []):
+        out_legend = os.path.join(plots_dir, "class_highlight_legend.png")
+        plot_class_legend(cfg, out_legend)
+        print(f"  -> {out_legend}")
 
     # 3D interactive plots (only when exactly 3 components are computed)
     if n == 3:
