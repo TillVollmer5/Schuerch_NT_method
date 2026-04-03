@@ -285,7 +285,7 @@ def plot_volcano(results, group_a, group_b, fc_thresh, p_thresh,
         ax.scatter(x[mask], y[mask], c=col, s=sz, zorder=zo,
                    alpha=0.75, edgecolors="none")
 
-    # colored ring outline on highlighted significant dots
+    # colored ring outline on highlighted significant dots to show class
     if highlight_map:
         for i, fid in enumerate(feature_ids):
             if fid in highlight_map and directions[i] != "n.s.":

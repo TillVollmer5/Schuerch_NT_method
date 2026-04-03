@@ -176,7 +176,7 @@ def _run(cfg):
     ax.set_axisbelow(True)
 
     if legend_entries:
-        ax.legend(fontsize=9, loc="upper left", framealpha=0.85)
+        ax.legend(fontsize=9, loc="upper right", framealpha=0.85)
 
     plt.tight_layout()
     fig.savefig(out_plot, dpi=200)
