@@ -266,9 +266,15 @@ CLASS_PIE_DETECTED_ONLY = True
 CLASS_HIGHLIGHT = [
     # Uncomment and edit to activate highlighting.  Use any column from
     # feature_metadata_enriched.csv and any value listed above.
+    {"column": "npclassifier_pathway", "value": "Terpenoids",                          "color": "#edaf29"},
     {"column": "subclass",             "value": "Sesquiterpenoids",                    "color": "#2ecc71"},
     {"column": "subclass",             "value": "Monoterpenoids",                      "color": "#3498db"},
-    {"column": "npclassifier_pathway", "value": "Terpenoids",                          "color": "#e67e22"},
+    {"column": "subclass",             "value": "Diterpenoids",                        "color": "#9b59b6"},
+    {"column": "subclass",             "value": "Triterpenoids",                        "color": "#e67e22"},
+    {"column": "subclass",             "value": "Fatty acids and conjugates",          "color": "#1abc9c"},
+    {"column": "subclass",             "value": "Fatty alcohols",                        "color": "#16a085"},
+    {"column": "subclass",             "value": "Fatty acid esters",                        "color": "#27ae60"},
+    {"column": "subclass",             "value": "Oxanes",                        "color": "#c0392b"},
     # {"column": "superclass",           "value": "Organohalogen compounds",             "color": "#e74c3c"},
     # {"column": "superclass",           "value": "Phenylpropanoids and polyketides",    "color": "#9b59b6"},
 ]
