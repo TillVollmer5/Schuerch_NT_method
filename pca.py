@@ -326,13 +326,15 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
                           markerfacecolor=col, markersize=7, label=lbl)
                    for col, lbl in seen.items()]
         ax.legend(handles=handles, fontsize=7.5, framealpha=0.9,
-                  title="Highlighted", title_fontsize=8, loc="upper left")
+                  title="Highlighted", title_fontsize=8,
+                  loc="upper left", bbox_to_anchor=(1.02, 1),
+                  borderaxespad=0)
 
     # label top features by distance from origin
     if top_n > 0:
         dist    = np.sqrt(lx ** 2 + ly ** 2)
         top_idx = np.argsort(dist)[-top_n:]
-        ax.scatter(lx[top_idx], ly[top_idx], color="#c0392b",
+        ax.scatter(lx[top_idx], ly[top_idx], color="#111111",
                    s=28, zorder=4, edgecolors="none")
 
         # sort top features bottom-to-top by y so label order matches point order
@@ -349,7 +351,7 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
             if fid in class_label_map:
                 label = f"{label} [{class_label_map[fid]}]"
             t = ax.text(lx[i] + x_off, ly[i], label,
-                        fontsize=6.5, color="#c0392b", zorder=5,
+                        fontsize=6.5, color="#111111", zorder=5,
                         va="center", ha="left")
             texts.append((t, lx[i], ly[i]))
 
@@ -407,9 +409,10 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
     ax.set_ylabel(f"{col_y}  ({pct_y:.1f} %)", fontsize=11)
     ax.set_title("PCA loadings", fontsize=12, fontweight="bold")
     ax.grid(True, linestyle=":", linewidth=0.5, alpha=0.6)
+    ax.set_aspect("equal", adjustable="datalim")
 
     fig.tight_layout()
-    fig.savefig(output_path, dpi=200)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -707,8 +710,8 @@ def plot_loadings_3d(loadings_df, variance_df, output_path, top_n=10):
             name=f"top {top_n}",
             text=[ids[i] for i in hi_idx],
             textposition="top center",
-            textfont=dict(size=9, color="#c0392b"),
-            marker=dict(size=6, color="#c0392b", opacity=0.9),
+            textfont=dict(size=9, color="#111111"),
+            marker=dict(size=6, color="#111111", opacity=0.9),
             hovertemplate=(
                 "<b>%{text}</b><br>"
                 "PC1: %{x:.4f}<br>PC2: %{y:.4f}<br>PC3: %{z:.4f}"
