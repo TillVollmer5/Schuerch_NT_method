@@ -447,7 +447,7 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
 
     lx   = loadings_df[col_x].values
     ly   = loadings_df[col_y].values
-    dist = np.sqrt(lx ** 2 + ly ** 2)
+    dist = np.sqrt(lx ** 2 + ly ** 2) #euclidean distance from origin for selection 
 
     highlight_map   = highlight_map   or {}
     class_label_map = class_label_map or {}
@@ -470,12 +470,12 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
 
     # layout: one bar group per feature, two bars per group
     y_pos   = np.arange(top_n)
-    height  = 0.35                         # bar thickness
+    height  = 0.3                         # bar thickness
     col_pcx = "#2166ac"                    # blue  - PC_x
     col_pcy = "#d6604d"                    # red   - PC_y
 
-    fig_h = max(4.0, top_n * 0.55 + 1.2)  # scale figure height with n features
-    fig, ax = plt.subplots(figsize=(7, fig_h))
+    fig_h = max(4.0, top_n * 0.5 + 1.2)  # scale figure height with n features
+    fig, ax = plt.subplots(figsize=(8, fig_h))
 
     bars_x = ax.barh(y_pos + height / 2, vals_x, height,
                      color=col_pcx, alpha=0.82, label=f"{col_x}  ({pct_x:.1f} %)",
@@ -511,9 +511,10 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
         f"(selected by Euclidean distance in {col_x}/{col_y} space)",
         fontsize=10, fontweight="bold",
     )
-    ax.legend(fontsize=9, framealpha=0.9, loc="lower right")
+    ax.legend(fontsize=9, framealpha=0.9, loc="upper left")
     ax.grid(True, axis="x", linestyle=":", linewidth=0.4, alpha=0.5)
     ax.set_axisbelow(True)
+    ax.margins(x=0.2)  # small horizontal margin to avoid cutting off bars
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=200)
