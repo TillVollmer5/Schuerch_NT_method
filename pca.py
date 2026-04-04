@@ -299,7 +299,7 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
     highlight_map   = highlight_map   or {}
     class_label_map = class_label_map or {}
 
-    fig, ax = plt.subplots(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(8.5, 5))
 
     # draw background (non-highlighted) dots
     # split into highlighted and non-highlighted for correct z-ordering

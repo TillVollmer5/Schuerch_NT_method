@@ -307,7 +307,7 @@ PUBCHEM_CACHE_ONLY = True
 #         deleting the cache file).  Already-cached entries are still served
 #         from the cache and never re-fetched.
 
-PUBCHEM_USER_AGENT = "Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; contact: till.vollmer@unibe.ch)"
+PUBCHEM_USER_AGENT = "Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; contact: helene.gurtner@students.unibe.ch)"
 # Replace YOUR_EMAIL_HERE with your real email address.
 # PubChem's usage policy requests a descriptive User-Agent so they can contact
 # you if your script causes unexpected server load.
