@@ -172,7 +172,11 @@ output/
     |-- pca_loadings_bar.png             grouped loading bar chart (top N features)
     |-- pca_scores_3d.html               interactive 3D scores (N_COMPONENTS = 3 only)
     |-- pca_loadings_3d.html             interactive 3D loadings (N_COMPONENTS = 3 only)
+    |-- class_highlight_legend.png       standalone color key for CLASS_HIGHLIGHT rules
+    |                                    (only written when CLASS_HIGHLIGHT is non-empty)
     |-- hca_heatmap.png                  bidirectional clustered heatmap
+    |-- hca_class_legend.png             standalone color key for HCA annotation strips
+    |                                    and sample groups
     |-- volcano_<A>_vs_<B>.png           volcano plot per pairwise comparison
 ```
 
@@ -216,7 +220,7 @@ output/
 | `CLASS_PIE_GROUPS` | `"separate"` | `"separate"` = one pie per group; `"combined"` = one pie total; or a list of group names |
 | `CLASS_PIE_MIN_FRACTION` | `0.02` | Slices < this fraction merged into "Other" |
 | `CLASS_PIE_DETECTED_ONLY` | `True` | Count only features detected in the group; `False` = count all features |
-| `CLASS_HIGHLIGHT` | `[]` | List of `{"column", "value", "color"}` dicts; matching features highlighted in PCA loadings and volcano |
+| `CLASS_HIGHLIGHT` | `[]` | Ordered list of `{"column", "value", "color"}` dicts. Rules are applied in order; **later rules overwrite earlier ones**, so put broad classes first and specific subclasses last. Matching features appear as colored dots in PCA loadings/bar chart, colored ring outlines on significant volcano dots, and colored tick labels in the HCA bar chart. The same hex colors are reused in the HCA annotation strip legend so all plots are consistent. A standalone `class_highlight_legend.png` is written automatically. |
 | `CLASS_LABEL_COLUMN` | `""` | Column whose value is appended as `[class]` to feature labels in PCA loadings, bar chart, and volcano |
 | `PUBCHEM_CACHE_ONLY` | `False` | `True` = build output from local cache only, no network requests; compounds not yet cached are skipped. `False` = fetch missing entries from PubChem as normal |
 | `PUBCHEM_USER_AGENT` | `"TF_NT_pipeline/1.0 (...)"` | User-Agent header sent with all PubChem requests; replace `YOUR_EMAIL_HERE` |

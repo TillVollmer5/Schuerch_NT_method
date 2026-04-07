@@ -38,6 +38,7 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")          # non-interactive backend - no display needed
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 from sklearn.decomposition import PCA
 
@@ -298,7 +299,7 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
     highlight_map   = highlight_map   or {}
     class_label_map = class_label_map or {}
 
-    fig, ax = plt.subplots(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(8.5, 5))
 
     # draw background (non-highlighted) dots
     # split into highlighted and non-highlighted for correct z-ordering
@@ -325,13 +326,15 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
                           markerfacecolor=col, markersize=7, label=lbl)
                    for col, lbl in seen.items()]
         ax.legend(handles=handles, fontsize=7.5, framealpha=0.9,
-                  title="Highlighted", title_fontsize=8, loc="upper left")
+                  title="Highlighted", title_fontsize=8,
+                  loc="upper left", bbox_to_anchor=(1.02, 1),
+                  borderaxespad=0)
 
     # label top features by distance from origin
     if top_n > 0:
         dist    = np.sqrt(lx ** 2 + ly ** 2)
         top_idx = np.argsort(dist)[-top_n:]
-        ax.scatter(lx[top_idx], ly[top_idx], color="#c0392b",
+        ax.scatter(lx[top_idx], ly[top_idx], color="#111111",
                    s=28, zorder=4, edgecolors="none")
 
         # sort top features bottom-to-top by y so label order matches point order
@@ -348,7 +351,7 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
             if fid in class_label_map:
                 label = f"{label} [{class_label_map[fid]}]"
             t = ax.text(lx[i] + x_off, ly[i], label,
-                        fontsize=6.5, color="#c0392b", zorder=5,
+                        fontsize=6.5, color="#111111", zorder=5,
                         va="center", ha="left")
             texts.append((t, lx[i], ly[i]))
 
@@ -406,9 +409,10 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
     ax.set_ylabel(f"{col_y}  ({pct_y:.1f} %)", fontsize=11)
     ax.set_title("PCA loadings", fontsize=12, fontweight="bold")
     ax.grid(True, linestyle=":", linewidth=0.5, alpha=0.6)
+    ax.set_aspect("equal", adjustable="datalim")
 
     fig.tight_layout()
-    fig.savefig(output_path, dpi=200)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -447,7 +451,7 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
 
     lx   = loadings_df[col_x].values
     ly   = loadings_df[col_y].values
-    dist = np.sqrt(lx ** 2 + ly ** 2)
+    dist = np.sqrt(lx ** 2 + ly ** 2) #euclidean distance from origin for selection 
 
     highlight_map   = highlight_map   or {}
     class_label_map = class_label_map or {}
@@ -470,12 +474,12 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
 
     # layout: one bar group per feature, two bars per group
     y_pos   = np.arange(top_n)
-    height  = 0.35                         # bar thickness
+    height  = 0.3                         # bar thickness
     col_pcx = "#2166ac"                    # blue  - PC_x
     col_pcy = "#d6604d"                    # red   - PC_y
 
-    fig_h = max(4.0, top_n * 0.55 + 1.2)  # scale figure height with n features
-    fig, ax = plt.subplots(figsize=(7, fig_h))
+    fig_h = max(4.0, top_n * 0.5 + 1.2)  # scale figure height with n features
+    fig, ax = plt.subplots(figsize=(8, fig_h))
 
     bars_x = ax.barh(y_pos + height / 2, vals_x, height,
                      color=col_pcx, alpha=0.82, label=f"{col_x}  ({pct_x:.1f} %)",
@@ -511,12 +515,98 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
         f"(selected by Euclidean distance in {col_x}/{col_y} space)",
         fontsize=10, fontweight="bold",
     )
-    ax.legend(fontsize=9, framealpha=0.9, loc="lower right")
+    ax.legend(fontsize=9, framealpha=0.9, loc="upper left")
     ax.grid(True, axis="x", linestyle=":", linewidth=0.4, alpha=0.5)
     ax.set_axisbelow(True)
+    ax.margins(x=0.2)  # small horizontal margin to avoid cutting off bars
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=200)
+    plt.close(fig)
+
+
+# --- Standalone class highlight legend ----------------------------------------
+
+def plot_class_legend(cfg, output_path):
+    """
+    Save a standalone PNG legend for all CLASS_HIGHLIGHT color assignments.
+
+    Entries are grouped by annotation column (e.g. "subclass",
+    "npclassifier_pathway") with a bold subheading per column, followed by
+    one colored swatch + label per defined value.  An "Unclassified" entry
+    at the bottom shows the default grey used for non-highlighted features.
+
+    Silently returns without writing a file when CLASS_HIGHLIGHT is empty.
+
+    Visual style matches hca_class_legend.png (_save_class_legend in hca.py).
+    """
+    from collections import OrderedDict
+
+    rules = getattr(cfg, "CLASS_HIGHLIGHT", [])
+    if not rules:
+        return
+
+    # group rules by column, preserving first-appearance order
+    sections = OrderedDict()
+    for rule in rules:
+        col   = rule.get("column", "")
+        val   = rule.get("value",  "")
+        color = rule.get("color",  "#cccccc")
+        if not col or not val:
+            continue
+        sections.setdefault(col, {})[val] = color
+    # append "Unclassified" sentinel as its own section
+    sections["Unclassified"] = {"non-highlighted features": (0.33, 0.33, 0.33)}
+
+    if not sections:
+        return
+
+    # layout constants — identical to hca._save_class_legend
+    PATCH_H = 0.30
+    TITLE_H = 0.38
+    PAD     = 0.20
+    LEFT    = 0.15
+    FIG_W   = 4.2
+
+    total_h = PAD
+    for title, mapping in sections.items():
+        total_h += TITLE_H + len(mapping) * PATCH_H + PAD
+    total_h = max(total_h, 1.5)
+
+    fig, ax = plt.subplots(figsize=(FIG_W, total_h))
+    ax.set_xlim(0, FIG_W)
+    ax.set_ylim(0, total_h)
+    ax.axis("off")
+
+    y = total_h - PAD   # start from top, step downward
+
+    for section_title, mapping in sections.items():
+        y -= TITLE_H
+        ax.text(
+            LEFT, y + TITLE_H * 0.35,
+            section_title,
+            fontsize=10, fontweight="bold", va="center",
+        )
+        ax.plot([LEFT, FIG_W - LEFT], [y + TITLE_H * 0.05, y + TITLE_H * 0.05],
+                color="0.75", lw=0.6)
+
+        for label, color in mapping.items():
+            y -= PATCH_H
+            rect = mpatches.FancyBboxPatch(
+                (LEFT, y + PATCH_H * 0.15),
+                PATCH_H * 0.65, PATCH_H * 0.65,
+                boxstyle="round,pad=0.02",
+                facecolor=color, edgecolor="0.4", linewidth=0.5,
+            )
+            ax.add_patch(rect)
+            ax.text(
+                LEFT + PATCH_H * 0.85, y + PATCH_H * 0.5,
+                str(label),
+                fontsize=8.5, va="center",
+            )
+        y -= PAD
+
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -620,8 +710,8 @@ def plot_loadings_3d(loadings_df, variance_df, output_path, top_n=10):
             name=f"top {top_n}",
             text=[ids[i] for i in hi_idx],
             textposition="top center",
-            textfont=dict(size=9, color="#c0392b"),
-            marker=dict(size=6, color="#c0392b", opacity=0.9),
+            textfont=dict(size=9, color="#111111"),
+            marker=dict(size=6, color="#111111", opacity=0.9),
             hovertemplate=(
                 "<b>%{text}</b><br>"
                 "PC1: %{x:.4f}<br>PC2: %{y:.4f}<br>PC3: %{z:.4f}"
@@ -749,6 +839,12 @@ def run(cfg=config):
                       highlight_map=highlight_map,
                       class_label_map=class_label_map)
     print(f"  -> {out_bar}")
+
+    # standalone class highlight legend (only when CLASS_HIGHLIGHT is non-empty)
+    if getattr(cfg, "CLASS_HIGHLIGHT", []):
+        out_legend = os.path.join(plots_dir, "class_highlight_legend.png")
+        plot_class_legend(cfg, out_legend)
+        print(f"  -> {out_legend}")
 
     # 3D interactive plots (only when exactly 3 components are computed)
     if n == 3:

@@ -54,22 +54,25 @@ VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 #   3.086,   # Chloroiodomethane
 #   4.044,   # 3-Hexenal
 
-EXCLUSION_LIST = [19.071,
-13.587,
-14.010,
-26.229,
-4.043,
-5.643,
-5.690,
-10.614,
-23.321,
-22.810,
-8.090,
-9.529,
-11.290,
-10.591,
-11.918,
-10.072
+EXCLUSION_LIST = [5.997,#3-Hexenal
+7.735, #2-Hexenal, (E)-
+7.801, #3-Hexen-1-ol, formate, (Z)-
+8.958, #Styrene
+10.43, #.alpha.-Thujene
+11.934,#2,3-Diazabicyclo[2.2.1]hept-2-ene, 5-ethenyl-4,7,7-trimethyl-, (1.alpha.,4.alpha.,5.beta.)-
+12.88, #3-Hexen-1-ol, acetate, (Z)-
+13.205,#2-Hexen-1-ol, acetate, (E)-
+13.522,#p-Cymene
+13.665,#2-Undecenal, E-
+14.254,#trans-.beta.-Ocimene
+15.93, #Linalool
+16.375,#4,8-DIMETHYLNONA-1,3,7-TRIENE
+21.529,#Indole
+25.049,#(-)-(E)-Caryophyllene
+25.38, #trans-.alpha.-Bergamotene
+25.828,#Isogermacrene D
+28.763 #(3E,7E)-4,8,12-Trimethyltrideca-1,3,7,11-tetraene
+
 ]
 
 EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
@@ -266,9 +269,15 @@ CLASS_PIE_DETECTED_ONLY = True
 CLASS_HIGHLIGHT = [
     # Uncomment and edit to activate highlighting.  Use any column from
     # feature_metadata_enriched.csv and any value listed above.
+    {"column": "npclassifier_pathway", "value": "Terpenoids",                          "color": "#edaf29"},
     {"column": "subclass",             "value": "Sesquiterpenoids",                    "color": "#2ecc71"},
     {"column": "subclass",             "value": "Monoterpenoids",                      "color": "#3498db"},
-    {"column": "npclassifier_pathway", "value": "Terpenoids",                          "color": "#e67e22"},
+    {"column": "subclass",             "value": "Diterpenoids",                        "color": "#9b59b6"},
+    {"column": "subclass",             "value": "Triterpenoids",                        "color": "#e67e22"},
+    {"column": "subclass",             "value": "Fatty acids and conjugates",          "color": "#1abc9c"},
+    {"column": "subclass",             "value": "Fatty alcohols",                        "color": "#16a085"},
+    {"column": "subclass",             "value": "Fatty acid esters",                        "color": "#27ae60"},
+    {"column": "subclass",             "value": "Oxanes",                        "color": "#c0392b"},
     # {"column": "superclass",           "value": "Organohalogen compounds",             "color": "#e74c3c"},
     # {"column": "superclass",           "value": "Phenylpropanoids and polyketides",    "color": "#9b59b6"},
 ]
@@ -298,7 +307,7 @@ PUBCHEM_CACHE_ONLY = True
 #         deleting the cache file).  Already-cached entries are still served
 #         from the cache and never re-fetched.
 
-PUBCHEM_USER_AGENT = "Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; contact: till.vollmer@unibe.ch)"
+PUBCHEM_USER_AGENT = "Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; contact: helene.gurtner@students.unibe.ch)"
 # Replace YOUR_EMAIL_HERE with your real email address.
 # PubChem's usage policy requests a descriptive User-Agent so they can contact
 # you if your script causes unexpected server load.

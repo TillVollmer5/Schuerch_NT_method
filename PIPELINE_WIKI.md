@@ -1210,6 +1210,57 @@ used as axis labels and annotations in place of feature IDs.
 
 ---
 
+### 5.4 Class highlighting
+
+**Config:** `CLASS_HIGHLIGHT`, `CLASS_LABEL_COLUMN`
+
+`CLASS_HIGHLIGHT` is an ordered list of rules, each mapping a column/value
+pair from `feature_metadata_enriched.csv` to a hex color:
+
+```python
+CLASS_HIGHLIGHT = [
+    {"column": "npclassifier_pathway", "value": "Terpenoids",      "color": "#edaf29"},
+    {"column": "subclass",             "value": "Sesquiterpenoids", "color": "#2ecc71"},
+    {"column": "subclass",             "value": "Monoterpenoids",   "color": "#3498db"},
+]
+```
+
+**Rule application order — later rules overwrite earlier ones.**
+This means broad classes (e.g. all Terpenoids by pathway) should come *first*,
+and more specific subclasses (e.g. Sesquiterpenoids, Monoterpenoids) come
+*last*. A sesquiterpenoid will therefore first be colored orange (by the
+pathway rule) and then overwritten to green (by the subclass rule), so the
+final color is always the most specific match.
+
+**Visual effect per plot:**
+
+| Plot | Effect |
+|------|--------|
+| `pca_loadings.png` | Highlighted dots drawn in their class color instead of default grey |
+| `pca_loadings_bar.png` | y-axis tick labels for highlighted features drawn in their class color |
+| `volcano_*.png` | Colored ring outline drawn around significant (non-grey) dots |
+| `hca_heatmap.png` | x-axis tick labels colored (when labels are shown) |
+
+**Color consistency across plots:**
+The same hex colors from `CLASS_HIGHLIGHT` are used by all scripts (PCA,
+volcano, HCA). In the HCA annotation strips (`_build_col_colors`), the
+highlight rules are applied first; only values not covered by any rule receive
+automatically-assigned `tab20` colors. This ensures the legend colors in
+`class_highlight_legend.png` (PCA output) and `hca_class_legend.png` (HCA
+output) are consistent.
+
+**Standalone legend (`class_highlight_legend.png`):**
+Written automatically by `pca.py` whenever `CLASS_HIGHLIGHT` is non-empty.
+Contains one section per annotation column, with a colored swatch and label
+for each rule, and a grey "Unclassified" row at the bottom. Visual style
+matches the HCA color key.
+
+**`CLASS_LABEL_COLUMN`** (e.g. `"subclass"`): when set, the value from this
+column is appended as `[Sesquiterpenoids]` to feature labels in the PCA
+loadings scatter, loadings bar chart, and volcano plot.
+
+---
+
 ## 8. Step 5 — Hierarchical Cluster Analysis (HCA)
 
 **Script:** `hca.py`
@@ -1283,6 +1334,22 @@ the row and column dendrograms respectively. This order is useful for:
 - Extracting co-varying metabolite clusters for downstream Spearman correlation.
 - Reporting the exact cluster order in supplementary tables.
 - Reproducing the figure ordering in other tools.
+
+**Class annotation strips (`HCA_CLASS_ANNOTATION_COLUMNS`):**
+One colored horizontal strip is drawn above the feature dendrogram for each
+column listed. Colors are assigned as follows:
+1. Any value covered by a `CLASS_HIGHLIGHT` rule receives the exact hex color
+   from that rule — identical to the colors used in PCA and volcano plots.
+2. Values not covered by any `CLASS_HIGHLIGHT` rule receive an automatically
+   assigned `tab20` color.
+
+This two-pass assignment ensures that the annotation strip legend
+(`hca_class_legend.png`) uses the same colors as the PCA class highlight legend
+(`class_highlight_legend.png`) wherever both cover the same compound class.
+
+**Standalone color key (`hca_class_legend.png`):**
+Always written alongside the heatmap. Contains one section for sample groups
+and one section per annotation column listed in `HCA_CLASS_ANNOTATION_COLUMNS`.
 
 ---
 
