@@ -54,22 +54,22 @@ VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 #   3.086,   # Chloroiodomethane
 #   4.044,   # 3-Hexenal
 
-EXCLUSION_LIST = [19.071,
-13.587,
-14.010,
-26.229,
-4.043,
-5.643,
-5.690,
-10.614,
-23.321,
-22.810,
-8.090,
-9.529,
-11.290,
-10.591,
-11.918,
-10.072
+EXCLUSION_LIST = [# 19.071,
+# 13.587,
+# 14.010,
+# 26.229,
+# 4.043,
+# 5.643,
+# 5.690,
+# 10.614,
+# 23.321,
+# 22.810,
+# 8.090,
+# 9.529,
+# 11.290,
+# 10.591,
+# 11.918,
+# 10.072
 ]
 
 EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
@@ -89,7 +89,7 @@ EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
 #        Filtering by overall prevalence would remove exactly those features.
 
 MIN_PREVALENCE_PCA     = 0.35   # e.g. 0.5 = detected in >= 50% of all samples
-MIN_PREVALENCE_HCA     = 0.35   # set > 0 to drop sparse features from the heatmap
+MIN_PREVALENCE_HCA     = 0.45   # set > 0 to drop sparse features from the heatmap
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
 # --- Blank correction (blank_correction.py) -----------------------------------
@@ -123,7 +123,7 @@ BLANK_REFERENCE_MODE = "max"
 # "each" - each blank file is compared independently; a sample/group/mean fails
 #           if its fold change falls below FOLD_CHANGE_THRESHOLD for ANY blank file
 
-BLANK_EXCLUDE_KEYWORDS = ["silan", "Silan", "Si"]
+BLANK_EXCLUDE_KEYWORDS = ["silan", "Silan", "Si", "siloxane", "Siloxane"]
 # Features whose compound name or molecular formula contains any of these
 # substrings (case-insensitive) are removed after blank correction.
 # Useful for stripping known instrument/column contaminants by name or element.
@@ -218,7 +218,7 @@ PCA_BAR_TOP      = 20   # number of features shown in the loading bar chart (pca
 RUN_CLASS_PLOTS = True
 # Set to False to skip pie chart generation entirely in pipeline.py.
 
-CLASS_PIE_COLUMNS = ["superclass", "npclassifier_pathway", "npclassifier_class", "subclass"]
+CLASS_PIE_COLUMNS = ["superclass", "npclassifier_pathway", "npclassifier_superclass", "subclass"]
 # List of columns from feature_metadata_enriched.csv to visualise as pie charts.
 # Any column in that file is valid, e.g.:
 #   ["kingdom", "superclass", "class", "subclass", "direct_parent",
@@ -284,11 +284,59 @@ CLASS_LABEL_COLUMN = "subclass"
 #   CLASS_LABEL_COLUMN = "superclass"          # broader grouping
 #   CLASS_LABEL_COLUMN = "npclassifier_class"  # NP biosynthetic class
 
+# --- Compound class color palette -------------------------------------------
+# Global color registry: maps class value strings → hex colors.
+# Used consistently in:
+#   - Compound class pie charts    (Step 2d  compound_class_plots.py)
+#   - HCA annotation strips        (Step 5   hca.py)
+#   - Interactive dendrogram pies  (Step 5b  hca_dendrogram.py)
+#
+# Values not listed here are auto-assigned from a tab20 palette in sorted order,
+# so the same unrecognised value always gets the same auto-assigned color.
+# "Unknown", "Unclassified", and "Other" always receive their gray entries below.
+#
+# To add or override a color, add:
+#   "YourClassValue": "#rrggbb",
+
+CLASS_COLORS = {
+    # ---- ClassyFire superclass -----------------------------------------------
+    "Lipids and lipid-like molecules":       "#ff7f0e",
+    "Phenylpropanoids and polyketides":      "#9467bd",
+    "Benzenoids":                            "#1f77b4",
+    "Organohalogen compounds":               "#d62728",
+    "Hydrocarbon derivatives":               "#8c564b",
+    "Hydrocarbons":                          "#7f7f7f",
+    "Organic oxygen compounds":              "#17becf",
+    "Organic acids and derivatives":         "#bcbd22",
+    "Organoheterocyclic compounds":          "#e377c2",
+    "Organosulfur compounds":                "#aec7e8",
+    "Alkaloids and derivatives":             "#98df8a",
+    "Organophosphorus compounds":            "#ffbb78",
+    # ---- NPClassifier pathway ------------------------------------------------
+    "Terpenoids":                            "#2ca02c",
+    "Fatty acids":                           "#ff9896",
+    "Polyketides":                           "#c5b0d5",
+    "Shikimates and Phenylpropanoids":       "#f7b6d2",
+    "Alkaloids":                             "#dbdb8d",
+    # ---- ClassyFire subclass (selection) ------------------------------------
+    "Sesquiterpenoids":                      "#2ecc71",
+    "Monoterpenoids":                        "#3498db",
+    "Diterpenoids":                          "#1abc9c",
+    "Triterpenoids":                         "#27ae60",
+    "Fatty acids and conjugates":            "#e74c3c",
+    "Fatty alcohols":                        "#c0392b",
+    "Fatty acid esters":                     "#f39c12",
+    # ---- Special / fallback (always gray) -----------------------------------
+    "Unknown":                               "#cccccc",
+    "Unclassified":                          "#aaaaaa",
+    "Other":                                 "#bbbbbb",
+}
+
 # --- Compound classification (compound_classification.py) --------------------
 RUN_COMPOUND_CLASSIFICATION = True
 # Set to False to skip the PubChem classification step entirely in pipeline.py.
 
-PUBCHEM_CACHE_ONLY = True
+PUBCHEM_CACHE_ONLY = False
 # True  - build the output from the local cache only; no network requests are
 #         made.  Compounds not yet in the cache are marked "unnamed" in the
 #         output instead of being queried.  Use this when you are offline, want
