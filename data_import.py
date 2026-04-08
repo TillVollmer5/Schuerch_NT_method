@@ -195,6 +195,7 @@ def _pool_peaks(file_dict, value_col, rt_shifts=None, name_col=None):
                     "mz":         float(row["Reference m/z"]),
                     "area":       float(row.get(value_col, 0) or 0),
                     "name":       name_val,
+                    "total_score": float(row.get("Total Score", 0) or 0),
                 })
             except (ValueError, TypeError):
                 pass
@@ -325,8 +326,8 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
         # one peak per sample (guaranteed by conflict resolution)
         sample_areas = {p["sample"]: p["area"] for p in cl}
 
-        # compound name from the peak with the highest area across all samples
-        best_peak     = max(cl, key=lambda p: p.get("area", 0))
+        # compound name from the peak with the highest total score across all samples
+        best_peak     = max(cl, key=lambda p: p.get("total_score", 0))
         compound_name = best_peak.get("name", "")
 
         # peak log — every peak is selected (no within-cluster duplicates remain)
