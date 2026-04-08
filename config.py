@@ -43,7 +43,7 @@ MZ_ALIGN_TOLERANCE = 0.1   # Da  - m/z window used during RT alignment
 
 VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 
-# --- Exclusion list (normalization.py -> PCA only) ---------------------------
+# --- Exclusion list (normalization.py -> PCA only) = Targeted list ---------------------------
 # Retention times (in minutes) and m/z values of biologically relevant features to withhold
 # from PCA so they do not dominate the principal components.
 # Applied in normalization.py when building peak_matrix_processed_pca.csv.
@@ -57,22 +57,22 @@ VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 
 EXCLUSION_LIST = [
 [5.997, 41.0384, "Z-3-Hexenal"],#3-Hexenal
-[7.735, 83.0492, "E-2-Hexenal"],#2-Hexenal, (E)-
-[7.801, 67.0542, "Z-3-Hexenol formate"],#3-Hexen-1-ol, formate, (Z)- ???
+[7.735, 83.0492, "E-2-Hexenal"],#2-Hexenal, (E)- E/Z based on literature
+[7.801, 67.0542, "Z-3-Hexenol"],#3-Hexen-1-ol, (Z)-
 [8.958, 104.0621, "Styrene"],#Styrene
-[10.43, 91.0542, "alpha-Thujene"],#.alpha.-Thujene
-[11.934,105.0699, "sesquiterpene"],#2,3-Diazabicyclo[2.2.1]hept-2-ene, 5-ethenyl-4,7,7-trimethyl-, (1.alpha.,4.alpha.,5.beta.)- ???
-[12.88, 67.0542, "Z-3-Hexenol acetate"],#3-Hexen-1-ol, acetate, (Z)-
+#[10.43, 91.0542, "alpha-Thujene"],#.alpha.-Thujene or pinene
+#[11.934,105.0699, "sesquiterpene"],#2,3-Diazabicyclo   pinene or thujene
+[12.88, 67.0542, "Z-3-Hexenol acetate"],#3-Hexen-1-ol, acetate, (Z)- e/z based on hexenal
 [13.205,67.0542, "E-2-Hexenol acetate"],#2-Hexen-1-ol, acetate, (E)-
-[13.522,119.0856, "p-Cymene"],#p-Cymene
-[13.665,41.0384, "2-Undecenal"],#2-Undecenal, E- ???
-[14.254,91.0542, "E-beta-Ocimene"],#trans-.beta.-Ocimene
+[13.522,119.0856, "Cymene"],#p-Cymene or any other cymene isomer
+[13.665,41.0384, "Limonene"],#limonene reference
+#[14.254,91.0542, "E-beta-Ocimene"],#trans-.beta.-Ocimene
 [15.93, 93.0699, "Linalool"],#Linalool
 [16.375,41.0384, "DMNT"],#4,8-DIMETHYLNONA-1,3,7-TRIENE
 [21.529,117.0573, "Indole"],#Indole
-[25.049,91.0542, "(-)-(E)-Caryophyllene"],#(-)-(E)-Caryophyllene
-[25.38, 119.0856, "E-alpha-Bergamotene"],#trans-.alpha.-Bergamotene
-[25.828,91.0542, "Isogermacrene D"],#Isogermacrene D
+[25.049,91.0542, "(-)-(E)-Caryophyllene"],#(-)-(E)-Caryophyllene reference
+#[25.38, 119.0856, "E-alpha-Bergamotene"],#trans-.alpha.-Bergamotene
+#[25.828,91.0542, "Isogermacrene D"],#Isogermacrene D
 [28.763, 81.0699, "TMTT"]#(3E,7E)-4,8,12-Trimethyltrideca-1,3,7,11-tetraene
 ]
 
