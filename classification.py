@@ -119,8 +119,10 @@ def classification_table(cfg=config):
         else:
             area_vals = {f"Area_{s}": "" for s in sample_names}
         cls, note = _ref_info(fid)
-        cls, note = _ref_farn(fid)
-        cls, note = _score_class(fid, cls, note)
+        if cls == "":
+            cls, note = _ref_farn(fid)
+        if cls == "":
+            cls, note = _score_class(fid, cls, note)
         row = {"feature_id": fid, "compound_name": compound_name, "class": cls, **area_vals, "note": note}
         rows.append(row)
 
