@@ -330,6 +330,9 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
         best_peak     = max(cl, key=lambda p: p.get("total_score", 0))
         compound_name = best_peak.get("name", "")
 
+        # per-sample names (for feature_name_map.csv)
+        sample_names_map = {p["sample"]: p.get("name", "") for p in cl}
+
         # peak log — every peak is selected (no within-cluster duplicates remain)
         peak_log = [{
             "feature_id": fid,
@@ -343,14 +346,15 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
         } for p in cl]
 
         features.append({
-            "feature_id":    fid,
-            "rt":            mean_rt,
-            "mz":            mean_mz,
-            "compound_name": compound_name,
-            "sample_areas":  sample_areas,
-            "peak_log":      peak_log,
-            "rt_values":     [p["rt"]  for p in cl],
-            "mz_values":     [p["mz"]  for p in cl],
+            "feature_id":      fid,
+            "rt":              mean_rt,
+            "mz":              mean_mz,
+            "compound_name":   compound_name,
+            "sample_names":    sample_names_map,
+            "sample_areas":    sample_areas,
+            "peak_log":        peak_log,
+            "rt_values":       [p["rt"]  for p in cl],
+            "mz_values":       [p["mz"]  for p in cl],
         })
 
     return features, n_splits
@@ -574,8 +578,24 @@ def run(cfg=config):
     meta.to_csv(out_meta)
     print(f"  -> {out_meta}  (incl. cluster spread and detection counts)")
 
-    # compound name map - feature_id -> compound_name (for plot labelling)
+    # compound name map - feature_id -> compound_name + per-sample names
     name_map = meta[["compound_name"]].copy()
+    # build a lookup: feature_id -> feature dict for fast access
+    feature_lookup = {f["feature_id"]: f for f in features}
+    for s in sample_order:
+        col_vals = []
+        for fid in name_map.index:
+            f = feature_lookup.get(fid, {})
+            sample_names_map = f.get("sample_names", {})
+            if s not in sample_names_map:
+                col_vals.append("not detected")
+            else:
+                sname = sample_names_map[s]
+                if sname == name_map.at[fid, "compound_name"]:
+                    col_vals.append("same")
+                else:
+                    col_vals.append(sname)
+        name_map[f"name_{s}"] = col_vals
     out_name_map = os.path.join(cfg.OUTPUT_DIR, "feature_name_map.csv")
     name_map.to_csv(out_name_map)
     n_named = int((name_map["compound_name"].str.strip() != "").sum())
