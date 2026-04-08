@@ -17,6 +17,7 @@ Runs all processing steps in sequence:
   Step 6  volcano.py                -> output/plots/volcano_*.png + results tables
   Step 7  top_features_analysis.py  -> output/top_features_analysis.csv
   Step 8  blank_contaminants_report.py -> output/blank_contaminants_report.csv
+  Step 9  classification.py           -> output/classification.csv
 
 All parameters are read from config.py. Edit config.py to adapt the
 pipeline to a new sample series without changing any processing code.
@@ -57,6 +58,7 @@ import hca_dendrogram as hca_dendrogram_step
 import volcano as volcano_step
 import top_features_analysis as top_features_analysis_step
 import blank_contaminants_report as blank_contaminants_report_step
+import classification as classification_step
 
 
 def main():
@@ -99,6 +101,8 @@ def main():
     top_features_analysis_step.run(config)
     print()
     blank_contaminants_report_step.run(config)
+    print()
+    classification_step.run(config)
 
     print()
     print("=" * 62)

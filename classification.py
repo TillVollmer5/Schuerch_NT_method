@@ -31,7 +31,7 @@ import pandas as pd
 import config
 
 
-def classification_table(cfg=config):
+def run(cfg=config):
     processed_path    = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_processed.csv")
     bc_path           = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_blank_corrected.csv")
     name_map_path     = os.path.join(cfg.OUTPUT_DIR, "feature_name_map.csv")
@@ -132,7 +132,5 @@ def classification_table(cfg=config):
     print(f"[classification] Wrote {len(rows)} features to {out_path}")
 
 
-# if __name__ == "__main__":
-#     run()
-
-classification_table()
+if __name__ == "__main__":
+    run(config)

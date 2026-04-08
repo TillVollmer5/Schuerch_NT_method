@@ -19,6 +19,7 @@ data exported from **Thermo TraceFinder** (Orbitrap MS).
 | 6 | `volcano.py` | `peak_matrix_blank_corrected.csv` -> volcano plots & results tables |
 | 7 | `top_features_analysis.py` | `pca_loadings.csv` + raw CSVs -> `top_features_analysis.csv` |
 | 8 | `blank_contaminants_report.py` | `features_removed_blank.csv` + provenance files -> `blank_contaminants_report.csv` |
+| 9 | `classification.py` | `peak_matrix_processed.csv` + `feature_metadata.csv` + reference CSVs -> `classification.csv` |
 
 All outputs are written to the `output/` folder.
 
@@ -97,6 +98,7 @@ python hca.py                # Step 5 - re-run if HCA_LINKAGE or HCA_METRIC chan
 python volcano.py            # Step 6 - re-run if VOLCANO_* thresholds change
 python top_features_analysis.py          # Step 7 - re-run after PCA; optional --n flag
 python blank_contaminants_report.py      # Step 8 - re-run after blank correction
+python classification.py                 # Step 9 - re-run after normalization or when reference files change
 ```
 
 ## Output files
@@ -162,6 +164,13 @@ output/
 |                                        and PC1/PC2(/PC3) loadings
 |-- blank_contaminants_report.csv        blank-removed features with compound name,
 |                                        RT, m/z, max blank area, and sample list
+|-- classification.csv                   one row per HCA feature; class (1-4),
+|                                        blank-corrected area per sample, and note.
+|                                        Class 1 = matched to DATA/references/references.csv
+|                                        Class 2 = matched to DATA/references/farn1-46*.csv
+|                                           (or SI≥800, HRF≥90, |ΔRI|≤50)
+|                                        Class 3 = SI≥700, HRF≥80, |ΔRI|≤100
+|                                        Class 4 = all remaining features
 |-- plots/
     |-- class_pie_<column>_<group>.png   compound class pie chart per column x group
     |                                    (only when RUN_CLASS_PLOTS = True)
