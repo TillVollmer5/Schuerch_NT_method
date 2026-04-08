@@ -118,31 +118,36 @@ def _prevalence_filter(matrix, min_prevalence, metadata=None):
 
 # --- Exclusion list (PCA only) -----------------------------------------------
 
-def _apply_exclusion(matrix, metadata, exclusion_rts, rt_margin):
+def _apply_exclusion(matrix, metadata, exclusion_entries, rt_margin, mz_tolerance):
     """
-    Remove features whose mean RT falls within +-rt_margin of any RT in
-    *exclusion_rts*.  Returns (filtered_matrix, removed_df).
+    Remove features whose mean_rt falls within +-rt_margin AND whose mean_mz
+    falls within +-mz_tolerance of any (rt, mz) entry in *exclusion_entries*.
+    Returns (filtered_matrix, removed_df).
     Called only when building the PCA-specific matrix.
 
-    The removed_df includes rt_deviation (distance from feature RT to the
-    matched exclusion RT) for traceability.
+    The removed_df includes rt_deviation for traceability.
     """
-    if not exclusion_rts:
+    if not exclusion_entries:
         return matrix, None
 
     rt_lookup = metadata["mean_rt"].reindex(matrix.index)
+    mz_lookup = metadata["mean_mz"].reindex(matrix.index) if "mean_mz" in metadata.columns else None
     hit_rt    = {}
     hit_dev   = {}
 
     for fid, feat_rt in rt_lookup.items():
         if pd.isna(feat_rt):
             continue
-        for excl_rt in exclusion_rts:
-            dev = abs(feat_rt - excl_rt)
-            if dev <= rt_margin:
-                hit_rt[fid]  = excl_rt
-                hit_dev[fid] = round(dev, 6)
-                break
+        feat_mz = float(mz_lookup[fid]) if (mz_lookup is not None and not pd.isna(mz_lookup[fid])) else None
+        for (excl_rt, excl_mz) in exclusion_entries:
+            if abs(feat_rt - excl_rt) > rt_margin:
+                continue
+            if excl_mz is not None and feat_mz is not None:
+                if abs(feat_mz - excl_mz) > mz_tolerance:
+                    continue
+            hit_rt[fid]  = excl_rt
+            hit_dev[fid] = round(abs(feat_rt - excl_rt), 6)
+            break
 
     exclude_idx = list(hit_rt.keys())
     filtered    = matrix.drop(index=exclude_idx)
@@ -339,21 +344,21 @@ def run(cfg=config):
         removed_prev_pca.to_csv(out_prev_pca, index=False)
         print(f"  -> {out_prev_pca}")
 
-    excl_rts = [rt for rt in cfg.EXCLUSION_LIST if rt is not None]
+    excl_entries = [(e[0], e[1]) for e in cfg.EXCLUSION_LIST if e[0] is not None]
 
-    if excl_rts:
+    if excl_entries:
         matrix_pca, removed_excl = _apply_exclusion(
-            matrix_pca, metadata, excl_rts, cfg.EXCLUSION_RT_MARGIN
+            matrix_pca, metadata, excl_entries, cfg.EXCLUSION_RT_MARGIN, cfg.EXCLUSION_MZ_TOLERANCE
         )
-        print(f"  exclusion list : {len(excl_rts)} RT(s), "
-              f"margin +-{cfg.EXCLUSION_RT_MARGIN} min  ->  "
+        print(f"  exclusion list : {len(excl_entries)} entries, "
+              f"RT margin +-{cfg.EXCLUSION_RT_MARGIN} min, mz tolerance +-{cfg.EXCLUSION_MZ_TOLERANCE} Da  ->  "
               f"removed {len(removed_excl)} feature(s) for PCA")
         excl_log = os.path.join(cfg.OUTPUT_DIR, "features_removed_exclusion.csv")
         removed_excl.to_csv(excl_log, index=False)
         print(f"  -> {excl_log}  (incl. rt_deviation)")
 
     processed_pca, zero_var_pca = _transform(matrix_pca, cfg)
-    if not excl_rts and removed_prev_pca.empty:
+    if not excl_entries and removed_prev_pca.empty:
         processed_pca = processed   # identical when no filters applied
 
     out_pca = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_processed_pca.csv")
