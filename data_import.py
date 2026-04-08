@@ -186,16 +186,24 @@ def _pool_peaks(file_dict, value_col, rt_shifts=None, name_col=None):
                         name_val = str(row.get(name_col, "") or "").strip()
                     except Exception:
                         pass
+                delta_ri_raw = row.get("Delta RI", None)
+                try:
+                    delta_ri_val = float(delta_ri_raw) if delta_ri_raw not in (None, "", "N/A") else None
+                except (ValueError, TypeError):
+                    delta_ri_val = None
                 peaks.append({
-                    "sample":     sample_name,
-                    "rt":         rt_aligned,          # used for clustering
-                    "rt_raw":     rt_aligned - shift,  # original RT before alignment
-                    "rt_aligned": rt_aligned,
-                    "rt_shift":   shift,
-                    "mz":         float(row["Reference m/z"]),
-                    "area":       float(row.get(value_col, 0) or 0),
-                    "name":       name_val,
+                    "sample":      sample_name,
+                    "rt":          rt_aligned,          # used for clustering
+                    "rt_raw":      rt_aligned - shift,  # original RT before alignment
+                    "rt_aligned":  rt_aligned,
+                    "rt_shift":    shift,
+                    "mz":          float(row["Reference m/z"]),
+                    "area":        float(row.get(value_col, 0) or 0),
+                    "name":        name_val,
                     "total_score": float(row.get("Total Score", 0) or 0),
+                    "si":          float(row.get("SI", 0) or 0),
+                    "hrf":         float(row.get("HRF Score", 0) or 0),
+                    "delta_ri":    delta_ri_val,
                 })
             except (ValueError, TypeError):
                 pass
@@ -346,15 +354,20 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
         } for p in cl]
 
         features.append({
-            "feature_id":      fid,
-            "rt":              mean_rt,
-            "mz":              mean_mz,
-            "compound_name":   compound_name,
-            "sample_names":    sample_names_map,
-            "sample_areas":    sample_areas,
-            "peak_log":        peak_log,
-            "rt_values":       [p["rt"]  for p in cl],
-            "mz_values":       [p["mz"]  for p in cl],
+            "feature_id":         fid,
+            "rt":                 mean_rt,
+            "mz":                 mean_mz,
+            "rt_highest_score":   best_peak["rt"],
+            "mz_highest_score":   best_peak["mz"],
+            "si_highest_score":   best_peak.get("si", ""),
+            "hrf_highest_score":  best_peak.get("hrf", ""),
+            "delta_ri_highest_score": best_peak.get("delta_ri", None),
+            "compound_name":      compound_name,
+            "sample_names":       sample_names_map,
+            "sample_areas":       sample_areas,
+            "peak_log":           peak_log,
+            "rt_values":          [p["rt"]  for p in cl],
+            "mz_values":          [p["mz"]  for p in cl],
         })
 
     return features, n_splits
@@ -569,9 +582,14 @@ def run(cfg=config):
             "mz_max":              max(mz_vals),
             "mz_std":              (sum((v - f["mz"]) ** 2 for v in mz_vals) / len(mz_vals)) ** 0.5
                                    if len(mz_vals) > 1 else 0.0,
-            "n_samples_detected":  n_det,
-            "n_samples_total":     n_samples,
-            "n_contributing_peaks": len(f["peak_log"]),
+            "n_samples_detected":       n_det,
+            "n_samples_total":          n_samples,
+            "n_contributing_peaks":     len(f["peak_log"]),
+            "rt_highest_score":         f.get("rt_highest_score", ""),
+            "mz_highest_score":         f.get("mz_highest_score", ""),
+            "si_highest_score":         f.get("si_highest_score", ""),
+            "hrf_highest_score":        f.get("hrf_highest_score", ""),
+            "delta_ri_highest_score":   f.get("delta_ri_highest_score", None),
         })
     meta = pd.DataFrame(meta_rows).set_index("feature_id")
     out_meta = os.path.join(cfg.OUTPUT_DIR, "feature_metadata.csv")
