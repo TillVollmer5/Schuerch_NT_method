@@ -36,7 +36,7 @@ RT_MARGIN    = 0.05    # minutes  - peaks within this RT window -> same feature
 
 USE_MZ       = True   # if True, also require m/z proximity to merge peaks
                        # recommended for samples with many co-eluting compounds
-MZ_TOLERANCE = 0.005   # Da  - used only when USE_MZ = True
+MZ_TOLERANCE = 0.0005   # Da  - used only when USE_MZ = True
 
 ALIGN_RT          = True   # apply median RT-shift correction across samples before detection
 MZ_ALIGN_TOLERANCE = 0.1   # Da  - m/z window used during RT alignment
@@ -44,37 +44,40 @@ MZ_ALIGN_TOLERANCE = 0.1   # Da  - m/z window used during RT alignment
 VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 
 # --- Exclusion list (normalization.py -> PCA only) ---------------------------
-# Retention times (in minutes) of biologically relevant features to withhold
+# Retention times (in minutes) and m/z values of biologically relevant features to withhold
 # from PCA so they do not dominate the principal components.
 # Applied in normalization.py when building peak_matrix_processed_pca.csv.
 # HCA and the volcano plot always use the full feature set (peak_matrix_processed.csv)
 # so that known compounds remain visible and statistically testable there.
 #
 # Example entries (uncomment or add your own):
-#   3.086,   # Chloroiodomethane
-#   4.044,   # 3-Hexenal
+#   [5.997, 41.0384, "Z-3-Hexenal"],#3-Hexenal
+#   [7.735, 83.0492, "E-2-Hexenal"],#2-Hexenal, (E)-
+#   [rt,mz,"name"]  - specify RT, m/z, and a name for reference; m/z can be None to ignore m/z in matching
 
-EXCLUSION_LIST = [19.071,
-13.587,
-14.010,
-26.229,
-4.043,
-5.643,
-5.690,
-10.614,
-23.321,
-22.810,
-8.090,
-9.529,
-11.290,
-10.591,
-11.918,
-10.072
-
-    # 3.086,
+EXCLUSION_LIST = [
+[5.997, 41.0384, "Z-3-Hexenal"],#3-Hexenal
+[7.735, 83.0492, "E-2-Hexenal"],#2-Hexenal, (E)-
+[7.801, 67.0542, "Z-3-Hexenol formate"],#3-Hexen-1-ol, formate, (Z)- ???
+[8.958, 104.0621, "Styrene"],#Styrene
+[10.43, 91.0542, "alpha-Thujene"],#.alpha.-Thujene
+[11.934,105.0699, "sesquiterpene"],#2,3-Diazabicyclo[2.2.1]hept-2-ene, 5-ethenyl-4,7,7-trimethyl-, (1.alpha.,4.alpha.,5.beta.)- ???
+[12.88, 67.0542, "Z-3-Hexenol acetate"],#3-Hexen-1-ol, acetate, (Z)-
+[13.205,67.0542, "E-2-Hexenol acetate"],#2-Hexen-1-ol, acetate, (E)-
+[13.522,119.0856, "p-Cymene"],#p-Cymene
+[13.665,41.0384, "2-Undecenal"],#2-Undecenal, E- ???
+[14.254,91.0542, "E-beta-Ocimene"],#trans-.beta.-Ocimene
+[15.93, 93.0699, "Linalool"],#Linalool
+[16.375,41.0384, "DMNT"],#4,8-DIMETHYLNONA-1,3,7-TRIENE
+[21.529,117.0573, "Indole"],#Indole
+[25.049,91.0542, "(-)-(E)-Caryophyllene"],#(-)-(E)-Caryophyllene
+[25.38, 119.0856, "E-alpha-Bergamotene"],#trans-.alpha.-Bergamotene
+[25.828,91.0542, "Isogermacrene D"],#Isogermacrene D
+[28.763, 81.0699, "TMTT"]#(3E,7E)-4,8,12-Trimethyltrideca-1,3,7,11-tetraene
 ]
 
 EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
+EXCLUSION_MZ_TOLERANCE = MZ_TOLERANCE   # +- Da around each listed m/z based on maximal variance observed
 
 # --- Missingness / prevalence filter ------------------------------------------
 # Features coded as 0 after blank correction are "not detected" in that sample.
@@ -106,7 +109,7 @@ BLANK_USE_MZ       = True   # if True, also require m/z proximity for a blank pe
                               # Without this, a blank peak at the same RT but a
                               # different m/z (a different compound) can cause a
                               # sample feature to be incorrectly removed.
-BLANK_MZ_TOLERANCE = 0.005   # Da  - maximum |feature_mz - blank_mz| to accept match
+BLANK_MZ_TOLERANCE = MZ_TOLERANCE   # Da  - maximum |feature_mz - blank_mz| to accept match
                               # used only when BLANK_USE_MZ = True
 
 BLANK_SAMPLE_MODE = "per_sample"
