@@ -177,22 +177,25 @@ def _build_col_colors(cfg, feature_ids):
                 .astype(str)
                 .replace("nan", "Unknown"))
 
-        unique_all   = sorted(vals.unique())
-        unique_known = [v for v in unique_all if v not in _GRAY_SPECIAL]
+        unique_known = sorted(v for v in vals.unique() if v != "Unknown")
 
-        # Auto-assign tab20 for values not in CLASS_COLORS
-        auto_vals = [v for v in unique_known if v not in class_colors]
-        auto_map  = {v: _TAB20_HEX[i % len(_TAB20_HEX)]
-                     for i, v in enumerate(auto_vals)}
-
+        # seed color_map from CLASS_HIGHLIGHT rules that target this column
+        # (last rule wins, matching the PCA/volcano behavior)
+        highlight_rules = getattr(cfg, "CLASS_HIGHLIGHT", [])
         color_map = {}
-        for v in unique_known:
-            hex_c = class_colors.get(v) or auto_map.get(v, "#d0d0d0")
-            color_map[v] = _hex_to_rgb01(hex_c)
-        for special in _GRAY_SPECIAL:
-            if special in unique_all:
-                hex_c = class_colors.get(special, _GRAY_SPECIAL[special])
-                color_map[special] = _hex_to_rgb01(hex_c)
+        for rule in highlight_rules:
+            if rule.get("column") == col and rule.get("value") in unique_known:
+                hex_col = rule["color"].lstrip("#")
+                rgb = tuple(int(hex_col[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+                color_map[rule["value"]] = rgb
+
+        # assign tab20 colors for any values not covered by CLASS_HIGHLIGHT
+        unassigned = [v for v in unique_known if v not in color_map]
+        palette    = sns.color_palette("tab20", max(len(unassigned), 1))
+        for i, v in enumerate(unassigned):
+            color_map[v] = tuple(palette[i])
+
+        color_map["Unknown"] = gray
 
         result_cols[col] = vals.map(color_map)
         legend_data[col] = {v: color_map[v] for v in unique_known if v in color_map}
