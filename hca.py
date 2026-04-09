@@ -118,19 +118,36 @@ def _load_class_annotation(cfg, feature_ids):
     return highlight_map, class_label_map
 
 
+_TAB20_HEX = [
+    "#1f77b4", "#aec7e8", "#ff7f0e", "#ffbb78", "#2ca02c",
+    "#98df8a", "#d62728", "#ff9896", "#9467bd", "#c5b0d5",
+    "#8c564b", "#c49c94", "#e377c2", "#f7b6d2", "#7f7f7f",
+    "#c7c7c7", "#bcbd22", "#dbdb8d", "#17becf", "#9edae5",
+]
+
+_GRAY_SPECIAL = {"Unknown": "#cccccc", "Unclassified": "#aaaaaa", "Other": "#bbbbbb"}
+
+
+def _hex_to_rgb01(hex_color):
+    h = hex_color.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+
+
 def _build_col_colors(cfg, feature_ids):
     """
     Build a col_colors DataFrame for seaborn clustermap from enriched metadata.
 
     Each column in HCA_CLASS_ANNOTATION_COLUMNS becomes one colored annotation
-    strip alongside the feature dendrogram.  Colors are auto-assigned from a
-    qualitative palette; unknown/NaN values are shown in light gray.
+    strip alongside the feature dendrogram.  Colors are resolved from
+    CLASS_COLORS first; values not in that dict are auto-assigned from a tab20
+    palette in sorted alphabetical order (so the same value always gets the same
+    color across plots).
 
     Returns
     -------
     col_colors_df : pd.DataFrame  (index = feature_ids, cols = annotation cols)
                     or None when HCA_CLASS_ANNOTATION_COLUMNS is empty / file missing
-    legend_data   : dict  {col_name: {value: matplotlib_color, ...}}
+    legend_data   : dict  {col_name: {value: rgb_tuple, ...}}
     """
     ann_cols = getattr(cfg, "HCA_CLASS_ANNOTATION_COLUMNS", [])
     if not ann_cols:
@@ -142,8 +159,8 @@ def _build_col_colors(cfg, feature_ids):
               "skipping class annotation strips")
         return None, {}
 
-    enriched = pd.read_csv(enriched_path, index_col="feature_id")
-    gray     = (0.82, 0.82, 0.82)
+    enriched     = pd.read_csv(enriched_path, index_col="feature_id")
+    class_colors = getattr(cfg, "CLASS_COLORS", {})
 
     result_cols = {}
     legend_data = {}
@@ -181,7 +198,7 @@ def _build_col_colors(cfg, feature_ids):
         color_map["Unknown"] = gray
 
         result_cols[col] = vals.map(color_map)
-        legend_data[col] = {v: color_map[v] for v in unique_known}
+        legend_data[col] = {v: color_map[v] for v in unique_known if v in color_map}
 
     if not result_cols:
         return None, {}

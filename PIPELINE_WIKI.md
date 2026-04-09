@@ -61,9 +61,10 @@ and the final plots.
    - 9.5 [Classification and thresholds](#95-classification-and-thresholds)
 10. [Report — Blank contaminants](#10-report--blank-contaminants)
 11. [Report — Top PCA features](#11-report--top-pca-features)
-12. [Feature labelling (compound names)](#12-feature-labelling-compound-names)
-13. [Assumptions summary](#13-assumptions-summary)
-14. [Key parameter reference](#14-key-parameter-reference)
+12. [Step 9 — Feature classification](#12-step-9--feature-classification)
+13. [Feature labelling (compound names)](#13-feature-labelling-compound-names)
+14. [Assumptions summary](#14-assumptions-summary)
+15. [Key parameter reference](#15-key-parameter-reference)
 
 ---
 
@@ -152,6 +153,16 @@ Step 8  top_features_analysis.py
         - extracts top N features by PCA loading magnitude with compound
           names looked up from raw data by RT matching
         -> top_features_analysis.csv
+        |
+        v
+Step 9  classification.py
+        - reads peak_matrix_processed.csv (feature set), feature_metadata.csv
+          (library match scores), feature_name_map.csv (compound names),
+          peak_matrix_blank_corrected.csv (areas)
+        - matches features against DATA/references/references.csv  -> class 1
+        - matches features against DATA/references/farn1-46*.csv   -> class 2
+        - applies SI/HRF/Delta RI thresholds for classes 2/3/4
+        -> classification.csv
 ```
 
 The pipeline is deliberately linear through Steps 1-3 (each step depends on
@@ -1632,7 +1643,106 @@ python top_features_analysis.py --n 20  # top 20 features
 
 ---
 
-## 12. Feature labelling (compound names)
+## 12. Step 9 — Feature classification
+
+**Script:** `classification.py`
+**Input:** `output/peak_matrix_processed.csv`, `output/peak_matrix_blank_corrected.csv`,
+`output/feature_name_map.csv`, `output/feature_metadata.csv`,
+`DATA/references/references.csv`, `DATA/references/farn1-46*.csv`
+**Output:** `output/classification.csv`
+
+This step assigns each feature in the HCA feature set to one of four mutually
+exclusive classes, in strict priority order (a feature retains the first class
+that applies; no lower class can overwrite a higher one).
+
+---
+
+### 12.1 Class assignment priority
+
+| Class | Criterion | Note written |
+|-------|-----------|-------------|
+| 1 | Feature RT and m/z match an entry in `DATA/references/references.csv` within `RT_MARGIN` and `MZ_TOLERANCE` | `reference {Component Name}` |
+| 2 | Feature RT and m/z match an entry in `DATA/references/farn1-46*.csv` within `RT_MARGIN` and `MZ_TOLERANCE` | `farnesene {Component Name}` |
+| 2 | (if not matched to farn file) SI ≥ 800 **and** HRF ≥ 90 **and** \|ΔRI\| ≤ 50 | *(empty)* |
+| 3 | SI ≥ 700 **and** HRF ≥ 80 **and** \|ΔRI\| ≤ 100 | *(empty)* |
+| 4 | All remaining features | *(empty)* |
+
+SI (Spectral Index), HRF (Hit Ratio Factor Score), and ΔRI (Delta Retention
+Index) are taken from the TraceFinder peak with the **highest Total Score**
+within each feature cluster. These values are stored in `feature_metadata.csv`
+as `si_highest_score`, `hrf_highest_score`, and `delta_ri_highest_score`
+(written by `data_import.py`).
+
+When `delta_ri_highest_score` is missing or `N/A` (compound is not in a library
+with RI data), the RI criterion cannot be evaluated. Such features **never**
+qualify for class 2 or 3, and fall through to class 4 unless they match a
+reference or farnesene file.
+
+---
+
+### 12.2 Reference matching
+
+**Matching algorithm (applied to both reference files):**
+
+For each feature, its RT and m/z are extracted from the `feature_id` string
+(`"{mean_mz:.4f}_{mean_rt:.4f}"`). A match is accepted when:
+
+```
+|feature_rt − ref_rt| ≤ cfg.RT_MARGIN   (default 0.05 min)
+|feature_mz − ref_mz| ≤ cfg.MZ_TOLERANCE  (default 0.0005 Da)
+```
+
+Both conditions must hold simultaneously. If multiple reference rows match,
+the first hit (by row order in the reference file) is used.
+
+**Reference files (`DATA/references/`):**
+- `references.csv` — confirmed reference compounds from a reference injection;
+  same TraceFinder CSV format as sample data. Matched features receive class=1
+  and a note of the form `reference {Component Name}`.
+- `farn1-46*.csv` — farnesene isomer standard; Component Names are `farn1`
+  through `farn46` in elution order. Matched features receive class=2 and a
+  note of the form `farnesene {Component Name}`.
+
+---
+
+### 12.3 Output columns
+
+**`classification.csv`**
+
+| Column | Description |
+|--------|-------------|
+| `feature_id` | Feature identifier (same as all other output files) |
+| `compound_name` | Compound name from `feature_name_map.csv` |
+| `class` | Integer 1–4 (see §12.1) |
+| `Area_{sample}` | Blank-corrected raw area per sample (from `peak_matrix_blank_corrected.csv`); one column per sample |
+| `note` | Auto-generated provenance note, e.g. `reference farn2`; empty for score-based classes |
+
+The column order is: `feature_id`, `compound_name`, `class`, then one `Area_*`
+column per sample in the same column order as `peak_matrix_blank_corrected.csv`,
+then `note`.
+
+The `class` and `note` columns are the primary deliverables of this step. The
+area columns are included so that the CSV is self-contained for downstream
+reporting or manual review without needing to join against other output files.
+
+---
+
+### 12.4 Standalone usage
+
+```bash
+python classification.py
+```
+
+The script can be re-run at any time after Step 1 (`data_import.py`) and
+Step 3 (`normalization.py`) have been completed. Re-run it after:
+- Updating `DATA/references/references.csv` or the farnesene file.
+- Changing `RT_MARGIN` or `MZ_TOLERANCE` in `config.py`.
+- Re-running `data_import.py` (which regenerates `feature_metadata.csv`
+  with fresh SI/HRF/ΔRI values).
+
+---
+
+## 13. Feature labelling (compound names)
 
 **Config:** `COMPOUND_NAME_COL`, `FEATURE_LABEL`
 
@@ -1666,7 +1776,7 @@ back to `feature_metadata.csv` and `feature_peak_log.csv` unambiguously.
 
 ---
 
-## 13. Assumptions summary
+## 14. Assumptions summary
 
 The following is a consolidated list of the key assumptions embedded in the
 pipeline design. Violating these assumptions does not always produce wrong
@@ -1717,7 +1827,7 @@ results, but the user should be aware of them when interpreting output.
 
 ---
 
-## 14. Key parameter reference
+## 15. Key parameter reference
 
 | Parameter | Default | Step | Description |
 |-----------|---------|------|-------------|
@@ -1765,8 +1875,10 @@ results, but the user should be aware of them when interpreting output.
 | `CLASSYFIRE_RATE_LIMIT_DELAY` | `1.0` | 2c | Seconds between ClassyFire requests (no stated limit; 1.0 s is conservative) |
 | `NPCLASSIFIER_RATE_LIMIT_DELAY` | `1.0` | 2c | Seconds between NPClassifier requests (no stated limit; 1.0 s is conservative) |
 | `PUBCHEM_CACHE_FILE` | `"output/pubchem_cache.json"` | 2c | Local JSON cache for all API responses; delete to force full re-fetch |
+| `RT_MARGIN` | `0.05` | 9 | Also used by classification.py for reference file matching (minutes) |
+| `MZ_TOLERANCE` | `0.0005` | 9 | Also used by classification.py for reference file matching (Da) |
 
 ---
 
-*Generated for pipeline version as of 2026-03-31 (includes compound_classification step). All formulae are derived
+*Generated for pipeline version as of 2026-04-08 (includes classification step). All formulae are derived
 directly from the Python source code; parameters refer to `config.py`.*

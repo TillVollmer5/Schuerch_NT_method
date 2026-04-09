@@ -36,46 +36,48 @@ RT_MARGIN    = 0.05    # minutes  - peaks within this RT window -> same feature
 
 USE_MZ       = True   # if True, also require m/z proximity to merge peaks
                        # recommended for samples with many co-eluting compounds
-MZ_TOLERANCE = 0.005   # Da  - used only when USE_MZ = True
+MZ_TOLERANCE = 0.0005   # Da  - used only when USE_MZ = True
 
 ALIGN_RT          = True   # apply median RT-shift correction across samples before detection
 MZ_ALIGN_TOLERANCE = 0.1   # Da  - m/z window used during RT alignment
 
 VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 
-# --- Exclusion list (normalization.py -> PCA only) ---------------------------
-# Retention times (in minutes) of biologically relevant features to withhold
+# --- Exclusion list (normalization.py -> PCA only) = Targeted list ---------------------------
+# Retention times (in minutes) and m/z values of biologically relevant features to withhold
 # from PCA so they do not dominate the principal components.
 # Applied in normalization.py when building peak_matrix_processed_pca.csv.
 # HCA and the volcano plot always use the full feature set (peak_matrix_processed.csv)
 # so that known compounds remain visible and statistically testable there.
 #
 # Example entries (uncomment or add your own):
-#   3.086,   # Chloroiodomethane
-#   4.044,   # 3-Hexenal
+#   [5.997, 41.0384, "Z-3-Hexenal"],#3-Hexenal
+#   [7.735, 83.0492, "E-2-Hexenal"],#2-Hexenal, (E)-
+#   [rt,mz,"name"]  - specify RT, m/z, and a name for reference; m/z can be None to ignore m/z in matching
 
-EXCLUSION_LIST = [5.997,#3-Hexenal
-7.735, #2-Hexenal, (E)-
-7.801, #3-Hexen-1-ol, formate, (Z)-
-8.958, #Styrene
-10.43, #.alpha.-Thujene
-11.934,#2,3-Diazabicyclo[2.2.1]hept-2-ene, 5-ethenyl-4,7,7-trimethyl-, (1.alpha.,4.alpha.,5.beta.)-
-12.88, #3-Hexen-1-ol, acetate, (Z)-
-13.205,#2-Hexen-1-ol, acetate, (E)-
-13.522,#p-Cymene
-13.665,#2-Undecenal, E-
-14.254,#trans-.beta.-Ocimene
-15.93, #Linalool
-16.375,#4,8-DIMETHYLNONA-1,3,7-TRIENE
-21.529,#Indole
-25.049,#(-)-(E)-Caryophyllene
-25.38, #trans-.alpha.-Bergamotene
-25.828,#Isogermacrene D
-28.763 #(3E,7E)-4,8,12-Trimethyltrideca-1,3,7,11-tetraene
-
+EXCLUSION_LIST = [
+[5.997, 41.0384, "Z-3-Hexenal"],#3-Hexenal
+[7.735, 83.0492, "E-2-Hexenal"],#2-Hexenal, (E)- E/Z based on literature
+[7.801, 67.0542, "Z-3-Hexenol"],#3-Hexen-1-ol, (Z)-
+[8.958, 104.0621, "Styrene"],#Styrene
+#[10.43, 91.0542, "alpha-Thujene"],#.alpha.-Thujene or pinene
+#[11.934,105.0699, "sesquiterpene"],#2,3-Diazabicyclo   pinene or thujene
+[12.88, 67.0542, "Z-3-Hexenol acetate"],#3-Hexen-1-ol, acetate, (Z)- e/z based on hexenal
+[13.205,67.0542, "E-2-Hexenol acetate"],#2-Hexen-1-ol, acetate, (E)-
+[13.522,119.0856, "Cymene"],#p-Cymene or any other cymene isomer
+[13.665,41.0384, "Limonene"],#limonene reference
+#[14.254,91.0542, "E-beta-Ocimene"],#trans-.beta.-Ocimene
+[15.93, 93.0699, "Linalool"],#Linalool
+[16.375,41.0384, "DMNT"],#4,8-DIMETHYLNONA-1,3,7-TRIENE
+[21.529,117.0573, "Indole"],#Indole
+[25.049,91.0542, "(-)-(E)-Caryophyllene"],#(-)-(E)-Caryophyllene reference
+#[25.38, 119.0856, "E-alpha-Bergamotene"],#trans-.alpha.-Bergamotene
+#[25.828,91.0542, "Isogermacrene D"],#Isogermacrene D
+[28.763, 81.0699, "TMTT"]#(3E,7E)-4,8,12-Trimethyltrideca-1,3,7,11-tetraene
 ]
 
 EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
+EXCLUSION_MZ_TOLERANCE = MZ_TOLERANCE   # +- Da around each listed m/z based on maximal variance observed
 
 # --- Missingness / prevalence filter ------------------------------------------
 # Features coded as 0 after blank correction are "not detected" in that sample.
@@ -92,7 +94,7 @@ EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
 #        Filtering by overall prevalence would remove exactly those features.
 
 MIN_PREVALENCE_PCA     = 0.35   # e.g. 0.5 = detected in >= 50% of all samples
-MIN_PREVALENCE_HCA     = 0.35   # set > 0 to drop sparse features from the heatmap
+MIN_PREVALENCE_HCA     = 0.45   # set > 0 to drop sparse features from the heatmap
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
 # --- Blank correction (blank_correction.py) -----------------------------------
@@ -107,7 +109,7 @@ BLANK_USE_MZ       = True   # if True, also require m/z proximity for a blank pe
                               # Without this, a blank peak at the same RT but a
                               # different m/z (a different compound) can cause a
                               # sample feature to be incorrectly removed.
-BLANK_MZ_TOLERANCE = 0.005   # Da  - maximum |feature_mz - blank_mz| to accept match
+BLANK_MZ_TOLERANCE = MZ_TOLERANCE   # Da  - maximum |feature_mz - blank_mz| to accept match
                               # used only when BLANK_USE_MZ = True
 
 BLANK_SAMPLE_MODE = "per_sample"
@@ -126,7 +128,7 @@ BLANK_REFERENCE_MODE = "max"
 # "each" - each blank file is compared independently; a sample/group/mean fails
 #           if its fold change falls below FOLD_CHANGE_THRESHOLD for ANY blank file
 
-BLANK_EXCLUDE_KEYWORDS = ["silan", "Silan", "Si"]
+BLANK_EXCLUDE_KEYWORDS = ["silan", "Silan", "Si", "siloxane", "Siloxane"]
 # Features whose compound name or molecular formula contains any of these
 # substrings (case-insensitive) are removed after blank correction.
 # Useful for stripping known instrument/column contaminants by name or element.
@@ -221,7 +223,7 @@ PCA_BAR_TOP      = 20   # number of features shown in the loading bar chart (pca
 RUN_CLASS_PLOTS = True
 # Set to False to skip pie chart generation entirely in pipeline.py.
 
-CLASS_PIE_COLUMNS = ["superclass", "npclassifier_pathway", "npclassifier_class", "subclass"]
+CLASS_PIE_COLUMNS = ["superclass", "npclassifier_pathway", "npclassifier_superclass", "subclass"]
 # List of columns from feature_metadata_enriched.csv to visualise as pie charts.
 # Any column in that file is valid, e.g.:
 #   ["kingdom", "superclass", "class", "subclass", "direct_parent",
@@ -293,11 +295,59 @@ CLASS_LABEL_COLUMN = "subclass"
 #   CLASS_LABEL_COLUMN = "superclass"          # broader grouping
 #   CLASS_LABEL_COLUMN = "npclassifier_class"  # NP biosynthetic class
 
+# --- Compound class color palette -------------------------------------------
+# Global color registry: maps class value strings → hex colors.
+# Used consistently in:
+#   - Compound class pie charts    (Step 2d  compound_class_plots.py)
+#   - HCA annotation strips        (Step 5   hca.py)
+#   - Interactive dendrogram pies  (Step 5b  hca_dendrogram.py)
+#
+# Values not listed here are auto-assigned from a tab20 palette in sorted order,
+# so the same unrecognised value always gets the same auto-assigned color.
+# "Unknown", "Unclassified", and "Other" always receive their gray entries below.
+#
+# To add or override a color, add:
+#   "YourClassValue": "#rrggbb",
+
+CLASS_COLORS = {
+    # ---- ClassyFire superclass -----------------------------------------------
+    "Lipids and lipid-like molecules":       "#ff7f0e",
+    "Phenylpropanoids and polyketides":      "#9467bd",
+    "Benzenoids":                            "#1f77b4",
+    "Organohalogen compounds":               "#d62728",
+    "Hydrocarbon derivatives":               "#8c564b",
+    "Hydrocarbons":                          "#7f7f7f",
+    "Organic oxygen compounds":              "#17becf",
+    "Organic acids and derivatives":         "#bcbd22",
+    "Organoheterocyclic compounds":          "#e377c2",
+    "Organosulfur compounds":                "#aec7e8",
+    "Alkaloids and derivatives":             "#98df8a",
+    "Organophosphorus compounds":            "#ffbb78",
+    # ---- NPClassifier pathway ------------------------------------------------
+    "Terpenoids":                            "#2ca02c",
+    "Fatty acids":                           "#ff9896",
+    "Polyketides":                           "#c5b0d5",
+    "Shikimates and Phenylpropanoids":       "#f7b6d2",
+    "Alkaloids":                             "#dbdb8d",
+    # ---- ClassyFire subclass (selection) ------------------------------------
+    "Sesquiterpenoids":                      "#2ecc71",
+    "Monoterpenoids":                        "#3498db",
+    "Diterpenoids":                          "#1abc9c",
+    "Triterpenoids":                         "#27ae60",
+    "Fatty acids and conjugates":            "#e74c3c",
+    "Fatty alcohols":                        "#c0392b",
+    "Fatty acid esters":                     "#f39c12",
+    # ---- Special / fallback (always gray) -----------------------------------
+    "Unknown":                               "#cccccc",
+    "Unclassified":                          "#aaaaaa",
+    "Other":                                 "#bbbbbb",
+}
+
 # --- Compound classification (compound_classification.py) --------------------
 RUN_COMPOUND_CLASSIFICATION = True
 # Set to False to skip the PubChem classification step entirely in pipeline.py.
 
-PUBCHEM_CACHE_ONLY = True
+PUBCHEM_CACHE_ONLY = False
 # True  - build the output from the local cache only; no network requests are
 #         made.  Compounds not yet in the cache are marked "unnamed" in the
 #         output instead of being queried.  Use this when you are offline, want
