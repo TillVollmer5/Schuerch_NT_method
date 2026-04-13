@@ -36,15 +36,53 @@ import config
 
 
 # ---------------------------------------------------------------------------
-# Colour palette for pie slices (cycles if more slices than colours)
+# Colour helpers
 # ---------------------------------------------------------------------------
 
-_PIE_COLORS = [
-    "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
-    "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac",
-    "#aecde8", "#ffbe7d", "#d37295", "#a0cbe8", "#fabfd2",
-    "#8cd17d", "#b6992d", "#499894", "#e15759", "#86bcb6",
+_FALLBACK_PALETTE = [
+    "#4e79a7", "#f28e2b", "#76b7b2", "#59a14f", "#edc948",
+    "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac", "#aecde8",
+    "#ffbe7d", "#d37295", "#a0cbe8", "#fabfd2", "#8cd17d",
+    "#b6992d", "#499894", "#86bcb6", "#e15759", "#1f77b4",
 ]
+
+_GRAY_VALUES = {"Unknown": "#cccccc", "Unclassified": "#aaaaaa", "Other": "#bbbbbb"}
+
+
+def _build_color_map(all_values, class_colors):
+    """
+    Build {label: hex_color} for all_values using CLASS_COLORS first, then
+    _FALLBACK_PALETTE for unrecognised values (assigned in sorted alphabetical
+    order so the same value always gets the same auto-assigned color).
+
+    Parameters
+    ----------
+    all_values   : iterable of str  — all unique values in this column
+                   (across all groups, so colors are group-consistent)
+    class_colors : dict             — from config.CLASS_COLORS
+
+    Returns
+    -------
+    dict  label -> hex color string
+    """
+    unique = sorted(set(str(v) for v in all_values))
+    # Values that need auto-assignment from fallback palette
+    auto_vals = [
+        v for v in unique
+        if v not in class_colors and v not in _GRAY_VALUES
+    ]
+    auto_map = {v: _FALLBACK_PALETTE[i % len(_FALLBACK_PALETTE)]
+                for i, v in enumerate(auto_vals)}
+
+    cmap = {}
+    for v in unique:
+        if v in _GRAY_VALUES:
+            cmap[v] = class_colors.get(v, _GRAY_VALUES[v])
+        elif v in class_colors:
+            cmap[v] = class_colors[v]
+        else:
+            cmap[v] = auto_map.get(v, "#cccccc")
+    return cmap
 
 
 def _build_counts(enriched, col, feature_ids, label):
@@ -84,11 +122,14 @@ def _merge_small(counts, min_fraction):
     return keep
 
 
-def _plot_pie(counts, title, output_path):
+def _plot_pie(counts, title, output_path, color_map=None):
     """Draw and save a single pie chart from a counts Series."""
     labels  = counts.index.tolist()
     sizes   = counts.values
-    colors  = [_PIE_COLORS[i % len(_PIE_COLORS)] for i in range(len(labels))]
+    if color_map:
+        colors = [color_map.get(lbl, "#cccccc") for lbl in labels]
+    else:
+        colors = [_FALLBACK_PALETTE[i % len(_FALLBACK_PALETTE)] for i in range(len(labels))]
 
     fig, ax = plt.subplots(figsize=(7, 5.5))
 
@@ -211,9 +252,20 @@ def run(cfg=config):
     print(f"   detected_only : {detected_only}")
     print(f"   min_fraction  : {min_fraction}")
 
+    # --- Build per-column color maps (from all values across all groups) ------
+    # Colors are resolved once per column using all observed values so the same
+    # class always gets the same color regardless of which group is plotted.
+    class_colors = getattr(cfg, "CLASS_COLORS", {})
+    col_color_maps = {}
+    for col in valid_columns:
+        all_vals = enriched[col].fillna("Unclassified").astype(str).tolist()
+        all_vals += ["Other", "Unknown", "Unclassified"]   # ensure grays exist
+        col_color_maps[col] = _build_color_map(all_vals, class_colors)
+
     # --- Generate plots -------------------------------------------------------
     n_plots = 0
     for col in valid_columns:
+        color_map = col_color_maps[col]
         for grp, feat_ids in group_features.items():
             counts = _build_counts(enriched, col, feat_ids, grp)
             if counts.empty:
@@ -228,11 +280,10 @@ def run(cfg=config):
             fname    = f"class_pie_{safe_col}_{safe_grp}.png"
             out_path = os.path.join(plots_dir, fname)
 
-            n_features = sum(len(v) for v in [feat_ids])
             title = (f"Compound class distribution — {col}\n"
                      f"Group: {grp}  (n={len(feat_ids)} features detected)")
 
-            _plot_pie(counts, title, out_path)
+            _plot_pie(counts, title, out_path, color_map)
             print(f"   -> {out_path}")
             n_plots += 1
 

@@ -59,15 +59,29 @@ _TAB20 = [
 _GRAY_UNKNOWN = "#cccccc"
 
 
-def _assign_colors(all_values):
-    """Map unique non-null values → _TAB20 colors; Unknown/NaN → gray."""
+def _assign_colors(all_values, class_colors=None):
+    """
+    Map unique non-null values → hex colors.
+
+    Pinned colors from class_colors (config.CLASS_COLORS) are applied first;
+    remaining values are auto-assigned from _TAB20 in sorted alphabetical order
+    so the same value always gets the same auto-assigned color.
+    Unknown/NaN → _GRAY_UNKNOWN.
+    """
+    if class_colors is None:
+        class_colors = {}
     known, seen = [], set()
     for v in all_values:
         sv = str(v).strip()
         if sv not in ("", "nan", "Unknown", "None") and sv not in seen:
             known.append(sv); seen.add(sv)
-    cmap = {v: _TAB20[i % len(_TAB20)] for i, v in enumerate(sorted(known))}
-    cmap["Unknown"] = _GRAY_UNKNOWN
+    known_sorted = sorted(known)
+    auto_vals = [v for v in known_sorted if v not in class_colors]
+    auto_map  = {v: _TAB20[i % len(_TAB20)] for i, v in enumerate(auto_vals)}
+    cmap = {}
+    for v in known_sorted:
+        cmap[v] = class_colors.get(v, auto_map.get(v, _GRAY_UNKNOWN))
+    cmap["Unknown"] = class_colors.get("Unknown", _GRAY_UNKNOWN)
     return cmap
 
 
@@ -192,29 +206,120 @@ def _tooltip_html(nd, ann_cols, color_maps):
 #  Main                                                                        #
 # --------------------------------------------------------------------------- #
 
-def _build_html(plot_div, node_data_js, color_maps, ann_cols):
+def _build_html(plot_div, node_data_js, color_maps, ann_cols_all, ann_cols_default):
     """
-    Assemble the final self-contained HTML without using str.format() so that
-    curly braces inside the JavaScript block are never mis-interpreted.
-    """
-    node_data_json  = json.dumps(node_data_js)
-    color_maps_json = json.dumps({col: dict(cmap) for col, cmap in color_maps.items()})
-    ann_cols_json   = json.dumps(ann_cols)
+    Assemble the final self-contained HTML.
 
-    # The JS block is built as a plain string — no f-string, no .format().
+    ann_cols_all     : all annotation columns with pre-computed pies
+    ann_cols_default : columns pre-checked in the selector (= HCA_CLASS_ANNOTATION_COLUMNS)
+
+    The column-selector panel lets the user toggle which columns appear in hover
+    tooltips and comparison cards.  Changes call rebuildTooltips() (updates
+    Plotly trace text) and rebuildPanel() (rebuilds open comparison cards).
+
+    No str.format() is used — JS curly braces are never mis-interpreted.
+    """
+    node_data_json        = json.dumps(node_data_js)
+    color_maps_json       = json.dumps({col: dict(cmap) for col, cmap in color_maps.items()})
+    ann_cols_all_json     = json.dumps(ann_cols_all)
+    ann_cols_default_json = json.dumps(ann_cols_default)
+
+    # Checkbox panel — built with f-strings (Python values only, no JS braces)
+    if ann_cols_all:
+        cb_items = []
+        for col in ann_cols_all:
+            safe_id  = "cb_" + "".join(c if c.isalnum() else "_" for c in col)
+            checked  = " checked" if col in ann_cols_default else ""
+            cb_items.append(
+                f'<label style="margin-right:16px;font-size:12px;cursor:pointer;">'
+                f'<input type="checkbox" id="{safe_id}" onchange="onColChange()"{checked}>'
+                f'&nbsp;{col}</label>'
+            )
+        checkbox_html = (
+            '<div id="col-selector">'
+            '<span style="font-weight:bold;font-size:12px;margin-right:14px;color:#444;">'
+            'Pie chart columns:</span>'
+            + "".join(cb_items)
+            + "</div>"
+        )
+    else:
+        checkbox_html = ""
+
+    # JS block — plain string concatenation only, never .format()
     js = (
-        "const NODE_DATA   = " + node_data_json  + ";\n"
-        "const COLOR_MAPS  = " + color_maps_json + ";\n"
-        "const ANN_COLS    = " + ann_cols_json   + ";\n"
+        "const NODE_DATA       = " + node_data_json        + ";\n"
+        "const COLOR_MAPS      = " + color_maps_json       + ";\n"
+        "const ANN_COLS_ALL    = " + ann_cols_all_json     + ";\n"
+        "const ANN_COLS_DEFAULT= " + ann_cols_default_json + ";\n"
         "\n"
-        "let selectedNodes = new Set();\n"
-        "const PLOT_DIV = document.getElementById('hca-plot');\n"
+        "var selectedNodes = new Set();\n"
+        "var PLOT_DIV = document.getElementById('hca-plot');\n"
+        "\n"
+        "function getActiveCols() {\n"
+        "    return ANN_COLS_ALL.filter(function(col) {\n"
+        "        var safe = '';\n"
+        "        for (var i = 0; i < col.length; i++) {\n"
+        "            var c = col[i];\n"
+        "            safe += /[a-zA-Z0-9]/.test(c) ? c : '_';\n"
+        "        }\n"
+        "        var cb = document.getElementById('cb_' + safe);\n"
+        "        return cb && cb.checked;\n"
+        "    });\n"
+        "}\n"
+        "\n"
+        "function buildTooltipHtml(nd, activeCols) {\n"
+        "    if (!activeCols.length || !nd.pies) {\n"
+        "        return '<b>' + nd.n + ' features in subtree</b>';\n"
+        "    }\n"
+        "    var cells = '';\n"
+        "    for (var ci = 0; ci < activeCols.length; ci++) {\n"
+        "        var col = activeCols[ci];\n"
+        "        if (!nd.pies[col]) continue;\n"
+        "        var b64 = nd.pies[col];\n"
+        "        var img = '<img src=\"data:image/png;base64,' + b64 + '\" width=\"150\" height=\"150\">';\n"
+        "        var rows = '';\n"
+        "        var legData = nd.legends[col] || [];\n"
+        "        for (var ri = 0; ri < legData.length; ri++) {\n"
+        "            var val = legData[ri][0], cnt = legData[ri][1], pct = legData[ri][2];\n"
+        "            var color = (COLOR_MAPS[col] && COLOR_MAPS[col][val]) || '#cccccc';\n"
+        "            var swatch = '<span style=\"display:inline-block;width:9px;height:9px;'\n"
+        "                + 'background:' + color + ';border:1px solid #aaa;'\n"
+        "                + 'vertical-align:middle;margin-right:3px;\"></span>';\n"
+        "            rows += '<tr><td>' + swatch + '</td>'\n"
+        "                + '<td style=\"font-size:9px;padding-right:5px;\">' + val + '</td>'\n"
+        "                + '<td style=\"font-size:9px;color:#666;\">' + cnt + '&nbsp;(' + pct + '%)</td></tr>';\n"
+        "        }\n"
+        "        var legend = '<table style=\"border-collapse:collapse;margin-top:2px;\">' + rows + '</table>';\n"
+        "        cells += '<td style=\"padding:0 8px;vertical-align:top;text-align:center;\">'\n"
+        "            + '<b style=\"font-size:10px;\">' + col + '</b><br>' + img + legend + '</td>';\n"
+        "    }\n"
+        "    var header = '<b>' + nd.n + ' features in subtree</b><br>';\n"
+        "    var table = '<table><tr>' + cells + '</tr></table>';\n"
+        "    return header + table;\n"
+        "}\n"
+        "\n"
+        "function rebuildTooltips() {\n"
+        "    var activeCols = getActiveCols();\n"
+        "    var idx = getNodeTraceIdx();\n"
+        "    if (idx < 0) return;\n"
+        "    var n = PLOT_DIV.data[idx].x.length;\n"
+        "    var newTexts = [];\n"
+        "    for (var k = 0; k < n; k++) {\n"
+        "        newTexts.push(buildTooltipHtml(NODE_DATA[k], activeCols));\n"
+        "    }\n"
+        "    Plotly.restyle('hca-plot', {'text': [newTexts]}, [idx]);\n"
+        "}\n"
+        "\n"
+        "function onColChange() {\n"
+        "    rebuildTooltips();\n"
+        "    rebuildPanel();\n"
+        "}\n"
         "\n"
         "PLOT_DIV.on('plotly_click', function(data) {\n"
         "    if (!data.points || data.points.length === 0) return;\n"
-        "    const pt = data.points[0];\n"
+        "    var pt = data.points[0];\n"
         "    if (pt.data.name !== '__node_markers__') return;\n"
-        "    const k = pt.pointIndex;\n"
+        "    var k = pt.pointIndex;\n"
         "    if (selectedNodes.has(k)) { selectedNodes.delete(k); }\n"
         "    else { selectedNodes.add(k); }\n"
         "    updateMarkers();\n"
@@ -222,40 +327,45 @@ def _build_html(plot_div, node_data_js, color_maps, ann_cols):
         "});\n"
         "\n"
         "function getNodeTraceIdx() {\n"
-        "    return PLOT_DIV.data.findIndex(t => t.name === '__node_markers__');\n"
+        "    return PLOT_DIV.data.findIndex(function(t) { return t.name === '__node_markers__'; });\n"
         "}\n"
         "\n"
         "function updateMarkers() {\n"
-        "    const idx = getNodeTraceIdx();\n"
+        "    var idx = getNodeTraceIdx();\n"
         "    if (idx < 0) return;\n"
-        "    const n = PLOT_DIV.data[idx].x.length;\n"
-        "    const colors = Array.from({length: n}, (_, k) =>\n"
-        "        selectedNodes.has(k) ? '#e74c3c' : 'rgba(70,70,70,0.30)');\n"
-        "    const sizes = Array.from({length: n}, (_, k) =>\n"
-        "        selectedNodes.has(k) ? 13 : 9);\n"
-        "    Plotly.restyle('hca-plot',\n"
-        "        {'marker.color': [colors], 'marker.size': [sizes]}, [idx]);\n"
+        "    var n = PLOT_DIV.data[idx].x.length;\n"
+        "    var colors = [], sizes = [];\n"
+        "    for (var k = 0; k < n; k++) {\n"
+        "        colors.push(selectedNodes.has(k) ? '#e74c3c' : 'rgba(70,70,70,0.30)');\n"
+        "        sizes.push(selectedNodes.has(k) ? 13 : 9);\n"
+        "    }\n"
+        "    Plotly.restyle('hca-plot', {'marker.color': [colors], 'marker.size': [sizes]}, [idx]);\n"
         "}\n"
         "\n"
         "function rebuildPanel() {\n"
-        "    const panel = document.getElementById('comparison-panel');\n"
-        "    const cards = document.getElementById('comparison-cards');\n"
+        "    var panel = document.getElementById('comparison-panel');\n"
+        "    var cards = document.getElementById('comparison-cards');\n"
         "    if (selectedNodes.size === 0) { panel.style.display = 'none'; return; }\n"
         "    panel.style.display = 'block';\n"
-        "    let html = '';\n"
-        "    [...selectedNodes].sort((a, b) => a - b).forEach(k => {\n"
-        "        html += buildCard(k, NODE_DATA[k]);\n"
-        "    });\n"
+        "    var html = '';\n"
+        "    var sortedNodes = Array.from(selectedNodes).sort(function(a, b) { return a - b; });\n"
+        "    for (var i = 0; i < sortedNodes.length; i++) {\n"
+        "        html += buildCard(sortedNodes[i], NODE_DATA[sortedNodes[i]]);\n"
+        "    }\n"
         "    cards.innerHTML = html;\n"
         "}\n"
         "\n"
         "function buildCard(k, nd) {\n"
-        "    let piesHtml = '';\n"
-        "    for (const col of ANN_COLS) {\n"
+        "    var activeCols = getActiveCols();\n"
+        "    var piesHtml = '';\n"
+        "    for (var ci = 0; ci < activeCols.length; ci++) {\n"
+        "        var col = activeCols[ci];\n"
         "        if (!nd.pies || !nd.pies[col]) continue;\n"
-        "        let legendRows = '';\n"
-        "        for (const [val, cnt, pct] of (nd.legends[col] || [])) {\n"
-        "            const color = (COLOR_MAPS[col] && COLOR_MAPS[col][val]) || '#cccccc';\n"
+        "        var legendRows = '';\n"
+        "        var legData = nd.legends[col] || [];\n"
+        "        for (var ri = 0; ri < legData.length; ri++) {\n"
+        "            var val = legData[ri][0], cnt = legData[ri][1], pct = legData[ri][2];\n"
+        "            var color = (COLOR_MAPS[col] && COLOR_MAPS[col][val]) || '#cccccc';\n"
         "            legendRows += '<tr>'\n"
         "                + '<td style=\"padding:1px 2px 1px 0;\">'\n"
         "                + '<span style=\"display:inline-block;width:9px;height:9px;'\n"
@@ -266,7 +376,7 @@ def _build_html(plot_div, node_data_js, color_maps, ann_cols):
         "                + '<td style=\"font-size:9px;color:#666;vertical-align:middle;\">'\n"
         "                + cnt + ' (' + pct + '%)</td></tr>';\n"
         "        }\n"
-        "        const legendTable = '<table style=\"border-collapse:collapse;margin-top:3px;\">'\n"
+        "        var legendTable = '<table style=\"border-collapse:collapse;margin-top:3px;\">'\n"
         "            + legendRows + '</table>';\n"
         "        piesHtml += '<div style=\"text-align:center;margin:0 12px 0 0;\">'\n"
         "            + '<div style=\"font-weight:bold;font-size:11px;margin-bottom:3px;\">'\n"
@@ -305,7 +415,12 @@ def _build_html(plot_div, node_data_js, color_maps, ann_cols):
         "<meta charset=\"utf-8\">\n"
         "<title>HCA Class Dendrogram</title>\n"
         "<style>\n"
-        "  body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #fff; }\n"
+        "  body  { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #fff; }\n"
+        "  #col-selector {\n"
+        "    display: flex; align-items: center; flex-wrap: wrap;\n"
+        "    padding: 10px 20px; background: #f5f5f5;\n"
+        "    border-bottom: 1px solid #ddd;\n"
+        "  }\n"
         "  #comparison-panel {\n"
         "    display: none; padding: 14px 20px 20px;\n"
         "    border-top: 2px solid #e0e0e0; background: #f8f8f8;\n"
@@ -318,6 +433,8 @@ def _build_html(plot_div, node_data_js, color_maps, ann_cols):
         "  }\n"
         "</style>\n"
         "</head>\n<body>\n",
+
+        checkbox_html,
 
         plot_div,
 
@@ -361,21 +478,27 @@ def run(cfg=config):
     print(f"  features : {n_features}")
 
     # --- enriched metadata ---------------------------------------------------
-    ann_cols = list(getattr(cfg, "HCA_CLASS_ANNOTATION_COLUMNS", []))
+    ann_cols_default = list(getattr(cfg, "HCA_CLASS_ANNOTATION_COLUMNS", []))
+    class_colors     = getattr(cfg, "CLASS_COLORS", {})
+
     enriched = None
     if os.path.exists(enriched_path):
         enriched = pd.read_csv(enriched_path, index_col="feature_id")
-        ann_cols = [c for c in ann_cols if c in enriched.columns]
+        ann_cols_default = [c for c in ann_cols_default if c in enriched.columns]
     else:
-        ann_cols = []
+        ann_cols_default = []
         print("  [info] feature_metadata_enriched.csv not found — plain dendrogram")
+
+    # ann_cols = columns with pre-computed pies (= configured columns)
+    # Same as default here; users expand by editing HCA_CLASS_ANNOTATION_COLUMNS.
+    ann_cols = ann_cols_default
 
     # --- color maps (built from full dataset so colors are globally consistent)
     color_maps = {}
     for col in ann_cols:
         all_vals = (enriched[col].fillna("Unknown").astype(str)
                     .replace("nan", "Unknown").tolist())
-        color_maps[col] = _assign_colors(all_vals)
+        color_maps[col] = _assign_colors(all_vals, class_colors)
 
     # --- feature display labels ----------------------------------------------
     label_map = {}
@@ -596,7 +719,7 @@ def run(cfg=config):
         config={'responsive': False},
     )
 
-    html = _build_html(plot_div, node_data_js, color_maps, ann_cols)
+    html = _build_html(plot_div, node_data_js, color_maps, ann_cols, ann_cols_default)
 
     out_path = os.path.join(plots_dir, "hca_dendrogram.html")
     with open(out_path, 'w', encoding='utf-8') as f:
