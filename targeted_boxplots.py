@@ -14,7 +14,6 @@ column_names=["rt","mz","name"]
 for row in peak_matrix_processed["sample"]:
     column_names.append(row)
 
-print(column_names)
 
 
 
@@ -89,10 +88,14 @@ for idx, row in targeted_df.iterrows():
     bp = ax.boxplot([S, SR], tick_labels=['S', 'SR'], patch_artist=True)
 
     # Color the boxes
-    colors = ['gold', 'steelblue']
+    colors = ['coral', 'steelblue']
     for patch, color in zip(bp['boxes'], colors):
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
+
+    # Set median line color to black
+    for median in bp['medians']:
+        median.set_color('black')
 
     # Adjust y-axis with 10% padding
     all_data = np.concatenate([S, SR])
@@ -106,4 +109,7 @@ for idx, row in targeted_df.iterrows():
     ax.grid(True, alpha=0.3, axis='y')
 
 plt.tight_layout()
-plt.show()
+out_path = os.path.join(cfg.OUTPUT_DIR, "plots", "targeted_boxplots.png")
+os.makedirs(os.path.join(cfg.OUTPUT_DIR, "plots"), exist_ok=True)
+plt.savefig(out_path, dpi=200, bbox_inches="tight")
+#plt.show()
