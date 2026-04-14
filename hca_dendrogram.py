@@ -14,7 +14,7 @@ Produces a standalone interactive HTML dendrogram for compound class exploration
 All colors are consistent between pies, strips, and legends — same class always
 gets the same color everywhere.
 
-Input:  output/peak_matrix_processed.csv
+Input:  output/peak_matrix_processed_hca.csv
         output/feature_metadata_enriched.csv  (optional; needed for strips + pies)
         output/feature_name_map.csv            (optional; FEATURE_LABEL='name')
 Output: output/plots/hca_dendrogram.html
@@ -464,12 +464,12 @@ def run(cfg=config):
 
     print("-- Step 5b: Interactive class dendrogram -------------------------")
 
-    matrix_path   = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_processed.csv")
+    matrix_path   = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_processed_hca.csv")
     enriched_path = os.path.join(cfg.OUTPUT_DIR, "feature_metadata_enriched.csv")
     name_map_path = os.path.join(cfg.OUTPUT_DIR, "feature_name_map.csv")
 
     if not os.path.exists(matrix_path):
-        print("  [skip] peak_matrix_processed.csv not found; run normalization.py first")
+        print("  [skip] peak_matrix_processed_hca.csv not found; run normalization.py first")
         return
 
     matrix      = pd.read_csv(matrix_path, index_col="sample")

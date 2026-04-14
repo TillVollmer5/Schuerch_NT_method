@@ -56,24 +56,24 @@ VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 #   [rt,mz,"name"]  - specify RT, m/z, and a name for reference; m/z can be None to ignore m/z in matching
 
 EXCLUSION_LIST = [
-[5.997, 41.0384, "Z-3-Hexenal"],#3-Hexenal
-[7.735, 83.0492, "E-2-Hexenal"],#2-Hexenal, (E)- E/Z based on literature
-[7.801, 67.0542, "Z-3-Hexenol"],#3-Hexen-1-ol, (Z)-
-[8.958, 104.0621, "Styrene"],#Styrene
+#[5.997, 41.0384, "Z-3-Hexenal"],#3-Hexenal
+#[7.735, 83.0492, "E-2-Hexenal"],#2-Hexenal, (E)- E/Z based on literature
+#[7.801, 67.0542, "Z-3-Hexenol"],#3-Hexen-1-ol, (Z)-
+#[8.958, 104.0621, "Styrene"],#Styrene
 #[10.43, 91.0542, "alpha-Thujene"],#.alpha.-Thujene or pinene
 #[11.934,105.0699, "sesquiterpene"],#2,3-Diazabicyclo   pinene or thujene
-[12.88, 67.0542, "Z-3-Hexenol acetate"],#3-Hexen-1-ol, acetate, (Z)- e/z based on hexenal
-[13.205,67.0542, "E-2-Hexenol acetate"],#2-Hexen-1-ol, acetate, (E)-
-[13.522,119.0856, "Cymene"],#p-Cymene or any other cymene isomer
-[13.665,41.0384, "Limonene"],#limonene reference
+#[12.88, 67.0542, "Z-3-Hexenol acetate"],#3-Hexen-1-ol, acetate, (Z)- e/z based on hexenal
+#[13.205,67.0542, "E-2-Hexenol acetate"],#2-Hexen-1-ol, acetate, (E)-
+#[13.522,119.0856, "Cymene"],#p-Cymene or any other cymene isomer
+#[13.665,41.0384, "Limonene"],#limonene reference
 #[14.254,91.0542, "E-beta-Ocimene"],#trans-.beta.-Ocimene
-[15.93, 93.0699, "Linalool"],#Linalool
-[16.375,41.0384, "DMNT"],#4,8-DIMETHYLNONA-1,3,7-TRIENE
-[21.529,117.0573, "Indole"],#Indole
-[25.049,91.0542, "(-)-(E)-Caryophyllene"],#(-)-(E)-Caryophyllene reference
+#[15.93, 93.0699, "Linalool"],#Linalool
+#[16.375,41.0384, "DMNT"],#4,8-DIMETHYLNONA-1,3,7-TRIENE
+#[21.529,117.0573, "Indole"],#Indole
+#[25.049,91.0542, "(-)-(E)-Caryophyllene"],#(-)-(E)-Caryophyllene reference
 #[25.38, 119.0856, "E-alpha-Bergamotene"],#trans-.alpha.-Bergamotene
 #[25.828,91.0542, "Isogermacrene D"],#Isogermacrene D
-[28.763, 81.0699, "TMTT"]#(3E,7E)-4,8,12-Trimethyltrideca-1,3,7,11-tetraene
+#[28.763, 81.0699, "TMTT"]#(3E,7E)-4,8,12-Trimethyltrideca-1,3,7,11-tetraene
 ]
 
 EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
@@ -136,20 +136,124 @@ BLANK_EXCLUDE_KEYWORDS = ["silan", "Silan", "Si", "siloxane", "Siloxane"]
 #   BLANK_EXCLUDE_KEYWORDS = ["silan", "Si"]   # removes siloxanes / Si-containing compounds
 #   BLANK_EXCLUDE_KEYWORDS = ["column", "phthalate"]
 
-# --- Normalization (normalization.py) -----------------------------------------
-NORMALIZATION = "sum"
-# "sum"    - divide each sample by its total signal (scaled to median column sum)
-# "median" - scale each sample so its median equals the global median
-# "none"   - skip this step
+# --- Normalization, log transform, and scaling --------------------------------
+#
+# Global defaults — used by any analysis that does not have an override below.
+# Each analysis (PCA, HCA, Volcano, Boxplot) can override these independently
+# via the NORMALIZATION_<X>, LOG_BASE_<X>, and SCALING_<X> keys.
+# Set an override to None to fall back to the corresponding global default.
+#
+# Normalization options (applied sample-wise on RAW areas, before log):
+#   "none"   - skip normalization
+#   "sum"    - divide each sample by its total signal (rescaled to median sum)
+#   "median" - scale each sample so its median equals the global median
+#   "pqn"    - Probabilistic Quotient Normalization (Dieterle et al. 2006)
+#              Recommended for VOC data where total emission differs biologically.
+#              Computes per-sample quotients vs a reference spectrum (feature-wise
+#              median), takes the median quotient as the normalization factor.
+#
+# Log transform options (applied after normalization):
+#   2        - log2(x+1)   conventional in metabolomics (default)
+#   10       - log10(x+1)  useful for very wide dynamic ranges
+#   math.e   - ln(x+1)     natural log
+#   "sqrt"   - sqrt(x)     cube-root-like compression, handles zeros
+#   "cbrt"   - cbrt(x)     cube-root transform, symmetric for negative values
+#   "none"   - skip log transform
+#
+# Scaling options (applied feature-wise after log, per feature across all samples):
+#   "none"   - skip scaling
+#   "pareto" - (x - mean) / sqrt(std)  recommended for untargeted GC-MS
+#   "auto"   - (x - mean) / std        unit-variance; stronger equalisation
+#   "vast"   - (x - mean) * mean / std²  VAST: weights stable features (Van den Berg 2006)
+#   "range"  - (x - mean) / (max - min)  range scaling
+#   "level"  - (x - mean) / mean         level scaling (relative to mean)
 
-LOG_BASE = 2
-# Logarithm base for transformation: 2 (log2) or math.e (natural log)
-# log2 is conventional in metabolomics
+NORMALIZATION = "pqn"
+LOG_BASE      = 2
+SCALING       = "pareto"
 
-SCALING = "pareto"
-# "pareto" - mean-centre, divide by sqrtstd  (recommended for untargeted GCMS)
-# "auto"   - mean-centre, divide by std   (unit-variance; stronger equalisation)
-# "none"   - skip scaling (apply only after log transform)
+# --- Per-analysis overrides ---------------------------------------------------
+# Set any value to None to inherit the corresponding global setting above.
+# Recommended starting point for VOC / GC-MS metabolomics:
+#
+#   PCA  / HCA  : PQN + log2 + pareto  (pattern discovery, robust to abundance bias)
+#   Volcano     : PQN + log2 + none    (IMPORTANT: keep scaling "none" here — scaling
+#                                       distorts fold-change magnitudes)
+#   Boxplot     : none + none + none   (raw areas; directional biology is clear)
+
+NORMALIZATION_PCA     = None   # inherits NORMALIZATION
+NORMALIZATION_HCA     = None   # inherits NORMALIZATION
+NORMALIZATION_VOLCANO = None   # inherits NORMALIZATION
+NORMALIZATION_BOXPLOT = "none" # raw areas recommended for targeted inspection
+
+LOG_BASE_PCA     = None   # inherits LOG_BASE
+LOG_BASE_HCA     = None   # inherits LOG_BASE
+LOG_BASE_VOLCANO = None   # inherits LOG_BASE
+LOG_BASE_BOXPLOT = "none" # no log for boxplots (raw areas on y-axis)
+
+SCALING_PCA     = None    # inherits SCALING
+SCALING_HCA     = None    # inherits SCALING
+SCALING_VOLCANO = "none"  # must stay "none" for valid fold-change computation
+SCALING_BOXPLOT = "none"  # no scaling for boxplots
+
+# --- Targeted compound list (targeted_boxplots.py) ---------------------------
+# Compounds to visualise as individual boxplots, one panel per compound.
+# Independent from EXCLUSION_LIST — you can include compounds from there or add others.
+#
+# Each entry is a list with the following fields:
+#   [rt, mz, "name"]
+#       Match by retention time (+-EXCLUSION_RT_MARGIN) and m/z (+-EXCLUSION_MZ_TOLERANCE).
+#
+#   [rt, mz, "name", "feature_id"]
+#       Match by exact feature_id string (e.g. "41.0384_5.997").
+#       rt and mz are still used for display; set them to None if unknown.
+#
+# If TARGETED_LIST is empty ([]), the script falls back to EXCLUSION_LIST.
+
+TARGETED_LIST = [
+[5.997,  41.0384, "Z-3-Hexenal"],
+[7.735,  83.0492, "E-2-Hexenal"],
+[7.801,  67.0542, "Z-3-Hexenol"],
+[8.958, 104.0621, "Styrene"],
+[12.88,  67.0542, "Z-3-Hexenol acetate"],
+[13.205, 67.0542, "E-2-Hexenol acetate"],
+[13.522,119.0856, "Cymene"],
+[13.665, 41.0384, "Limonene"],
+[15.93,  93.0699, "Linalool"],
+[16.375, 41.0384, "DMNT"],
+[21.529, 117.0573, "Indole"],
+[25.049, 91.0542, "(-)-(E)-Caryophyllene"],
+[28.763, 81.0699, "TMTT"],
+]
+
+TARGETED_BOXPLOT_ROWS = 3
+# Number of rows in the boxplot grid.  Columns are computed automatically.
+# Increase for more compounds to keep panels readable.
+
+RUN_TARGETED_BOXPLOTS = True
+# Set to False to skip targeted boxplot generation in pipeline.py.
+
+STAT_TEST_BOXPLOT = "mannwhitney"
+# Statistical test for pairwise group comparison in targeted boxplots.
+# Applied between the first two groups in SAMPLE_GROUPS.
+#
+# "mannwhitney"  - Mann-Whitney U test (non-parametric; recommended for n < 10)
+#                  Tests whether one group tends to have higher values than the other.
+#                  Robust to non-normality and outliers.
+# "ttest"        - Welch's t-test (parametric; assumes approximate normality)
+#                  Use when n ≥ 8 and data distribution is roughly normal.
+# "ttest_equal"  - Student's t-test (equal variances assumed)
+#                  Use only when you have reason to believe variances are equal.
+# "wilcoxon"     - Wilcoxon signed-rank test (paired non-parametric)
+#                  Use only when samples are paired (matched treatment/control).
+# "spearman"     - Spearman rank correlation between group index and values
+#                  Useful when groups represent an ordered gradient (dose series).
+# "pearson"      - Pearson correlation between group index and values
+#                  Use only when relationship is expected to be linear and normal.
+# "kruskal"      - Kruskal-Wallis test (non-parametric ANOVA; >2 groups)
+#                  Recommended when comparing three or more groups.
+# "anova"        - One-way ANOVA (parametric; >2 groups)
+#                  Use when normality and equal variances can be assumed.
 
 # --- Volcano plot (volcano.py) -----------------------------------------------
 VOLCANO_COMPARISONS  = "all"
@@ -162,6 +266,18 @@ VOLCANO_FC_THRESHOLD  = 1.0    # log2 fold-change cutoff (1.0 = 2-fold change)
 VOLCANO_P_THRESHOLD   = 0.05   # Benjamini-Hochberg adjusted p-value threshold
 VOLCANO_TOP_LABELS    = 30     # number of top significant features to label in the plot
                                 # ranked by adjusted p-value; set to 0 to suppress labels
+
+STAT_TEST_VOLCANO = "mannwhitney"
+# Statistical test used to compute per-feature p-values in the volcano plot.
+# The log2 fold-change (mean difference on the log scale) is always used for
+# the x-axis regardless of test choice.  All p-values are BH-corrected.
+# IMPORTANT: do NOT use correlation tests here (spearman/pearson) — they are
+# not appropriate for two-group volcano analysis.
+#
+# "mannwhitney"  - Mann-Whitney U  (non-parametric; recommended default)
+# "ttest"        - Welch's t-test  (parametric; larger n, normal distribution)
+# "ttest_equal"  - Student's t-test (equal variances)
+# "kruskal"      - Kruskal-Wallis  (extends to >2 groups if needed)
 
 # --- HCA (hca.py) -------------------------------------------------------------
 HCA_LINKAGE           = "ward"       # linkage method: "ward", "average", "complete", "single"
@@ -206,7 +322,7 @@ FEATURE_LABEL = "id"         # how to label features in plots and axes
                               #          when no name is available
 
 # --- PCA (pca.py) -------------------------------------------------------------
-N_COMPONENTS    = 3   # number of principal components to compute and save
+N_COMPONENTS    = 2   # number of principal components to compute and save
                       # increase to retain more dimensions (e.g. 5 for scree plot)
 
 PCA_PLOT_X      = 1   # PC number to plot on the X axis (1-indexed)
@@ -215,9 +331,9 @@ PCA_PLOT_Y      = 2   # PC number to plot on the Y axis (1-indexed)
 PCA_ELLIPSE      = True  # draw 95 % confidence ellipses per group (requires scipy)
 PCA_TOP_LOADINGS = 10   # number of top-loading features to label in the loadings scatter plot
                         # set to 0 to skip labels
-PCA_BAR_TOP      = 20   # number of features shown in the loading bar chart (pca_loadings_bar.png)
-                        # selected by Euclidean distance in the PC_x/PC_y loading plane;
-                        # increase to inspect more candidates (e.g. 20)
+PCA_BAR_TOP      = 10   # number of features shown in the loading bar chart (pca_loadings_bar.png)
+                        # and exported to top_features_analysis.csv.
+                        # Selected by Euclidean distance in the PCA_PLOT_X/PCA_PLOT_Y loading plane.
 
 # --- Compound class plots (compound_class_plots.py) --------------------------
 RUN_CLASS_PLOTS = True
@@ -347,7 +463,7 @@ CLASS_COLORS = {
 RUN_COMPOUND_CLASSIFICATION = True
 # Set to False to skip the PubChem classification step entirely in pipeline.py.
 
-PUBCHEM_CACHE_ONLY = False
+PUBCHEM_CACHE_ONLY = True
 # True  - build the output from the local cache only; no network requests are
 #         made.  Compounds not yet in the cache are marked "unnamed" in the
 #         output instead of being queried.  Use this when you are offline, want
@@ -357,7 +473,7 @@ PUBCHEM_CACHE_ONLY = False
 #         deleting the cache file).  Already-cached entries are still served
 #         from the cache and never re-fetched.
 
-PUBCHEM_USER_AGENT = "Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; contact: helene.gurtner@students.unibe.ch)"
+PUBCHEM_USER_AGENT = "Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; contact: till.vollmer@unibe.ch)"
 # Replace YOUR_EMAIL_HERE with your real email address.
 # PubChem's usage policy requests a descriptive User-Agent so they can contact
 # you if your script causes unexpected server load.

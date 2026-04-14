@@ -40,12 +40,10 @@ and the final plots.
 6. [Step 3 — Normalization, transformation, and scaling](#6-step-3--normalization-transformation-and-scaling)
    - 4.1 [Prevalence filter](#41-prevalence-filter)
    - 4.2 [Exclusion list (PCA matrix only)](#42-exclusion-list-pca-matrix-only)
-   - 4.3 [Sum normalization](#43-sum-normalization)
-   - 4.4 [Median normalization (alternative)](#44-median-normalization-alternative)
-   - 4.5 [Log transformation](#45-log-transformation)
-   - 4.6 [Pareto scaling (recommended)](#46-pareto-scaling-recommended)
-   - 4.7 [Auto scaling (alternative)](#47-auto-scaling-alternative)
-   - 4.8 [Two output matrices](#48-two-output-matrices)
+   - 4.3 [Normalization methods](#43-normalization-methods) — `pqn`, `sum`, `median`, `none`
+   - 4.4 [Log transform methods](#44-log-transform-methods) — `log2`, `log10`, `ln`, `sqrt`, `cbrt`, `none`
+   - 4.5 [Scaling methods](#45-scaling-methods) — `pareto`, `auto`, `vast`, `range`, `level`, `none`
+   - 4.6 [Three output matrices](#46-three-output-matrices)
 7. [Step 4 — Principal Component Analysis (PCA)](#7-step-4--principal-component-analysis-pca)
    - 7.1 [Algorithm](#71-algorithm)
    - 7.2 [Scores plot and confidence ellipses](#72-scores-plot-and-confidence-ellipses)
@@ -54,11 +52,15 @@ and the final plots.
    - 8.1 [Algorithm and linkage](#81-algorithm-and-linkage)
    - 8.2 [Heatmap construction](#82-heatmap-construction)
 9. [Step 6 — Volcano plot](#9-step-6--volcano-plot)
-   - 9.1 [Normalization for volcano (no Pareto scaling)](#91-normalization-for-volcano-no-pareto-scaling)
-   - 9.2 [Log2 fold change](#92-log2-fold-change)
-   - 9.3 [Mann-Whitney U test](#93-mann-whitney-u-test)
-   - 9.4 [Benjamini-Hochberg FDR correction](#94-benjamini-hochberg-fdr-correction)
-   - 9.5 [Classification and thresholds](#95-classification-and-thresholds)
+   - 7.1 [Input matrix and why no scaling](#71-input-matrix-and-why-no-scaling)
+   - 7.2 [Log2 fold change](#72-log2-fold-change)
+   - 7.3 [Per-feature statistical test](#73-per-feature-statistical-test) — `mannwhitney`, `ttest`, `ttest_equal`, `kruskal`
+   - 7.4 [Benjamini-Hochberg FDR correction](#74-benjamini-hochberg-fdr-correction)
+   - 7.5 [Classification and thresholds](#75-classification-and-thresholds)
+9b. [Step 7b — Targeted boxplots](#9b-step-7b--targeted-boxplots)
+   - 9b.1 [Compound matching](#9b1-compound-matching)
+   - 9b.2 [Normalization](#9b2-normalization)
+   - 9b.3 [Statistical test](#9b3-statistical-test) — `mannwhitney`, `ttest`, `wilcoxon`, `spearman`, `pearson`, `kruskal`, `anova`
 10. [Report — Blank contaminants](#10-report--blank-contaminants)
 11. [Report — Top PCA features](#11-report--top-pca-features)
 12. [Step 9 — Feature classification](#12-step-9--feature-classification)
@@ -122,41 +124,45 @@ Step 2c compound_classification.py  [optional: RUN_COMPOUND_CLASSIFICATION]
         |
         v
 Step 3  normalization.py
-        - prevalence filter (separately for HCA and PCA)
+        - prevalence filter per analysis (PCA / HCA / Volcano thresholds)
         - exclusion list (PCA matrix only)
-        - normalization (sum or median)
-        - log2(x + 1) transformation
-        - Pareto or auto scaling
-        - produces TWO output matrices
+        - per-analysis normalization (pqn / sum / median / none)
+        - per-analysis log transform (log2 / log10 / ln / sqrt / cbrt / none)
+        - per-analysis scaling (pareto / auto / vast / range / level / none)
+        - scaling always forced to "none" for volcano output
+        - produces THREE output matrices
         |
-        v  peak_matrix_processed.csv      (full feature set -> HCA, volcano)
-           peak_matrix_processed_pca.csv  (filtered         -> PCA)
+        v  peak_matrix_processed_pca.csv      (filtered, PCA settings     -> PCA)
+           peak_matrix_processed_hca.csv      (full set, HCA settings     -> HCA / classification)
+           peak_matrix_processed_volcano.csv  (full set, volcano settings -> Volcano)
         |
-        +--------> Step 4  pca.py        -> scores/loadings plots
+        +--------> Step 4  pca.py               -> scores/loadings plots
         |
-        +--------> Step 5  hca.py        -> clustered heatmap
+        +--------> Step 5  hca.py               -> clustered heatmap
         |
-        +--------> Step 6  volcano.py    -> per-comparison volcano plots
-                   (reads blank_corrected matrix directly, re-normalises internally)
+        +--------> Step 6  volcano.py           -> per-comparison volcano plots
+        |
+        +--------> Step 7b targeted_boxplots.py -> one panel per TARGETED_LIST compound
+                   (reads blank_corrected matrix, applies NORMALIZATION_BOXPLOT inline)
         |
         v
-Step 7  blank_contaminants_report.py
+Step 7  top_features_analysis.py
+        - reads pca_loadings.csv, peak_matrix_raw.csv, feature_metadata.csv,
+          and raw TraceFinder CSVs
+        - extracts top N features by Euclidean PCA loading magnitude
+          with compound names looked up from raw data by RT matching
+        -> top_features_analysis.csv
+        |
+        v
+Step 8  blank_contaminants_report.py
         - reads blank_correction_audit.csv, feature_name_map.csv
         - per-(feature, sample_unit, blank) traceability report:
           which blank triggered each removal, fold change, m/z delta, etc.
         -> blank_contaminants_report.csv
         |
         v
-Step 8  top_features_analysis.py
-        - reads pca_loadings.csv, peak_matrix_raw.csv, feature_metadata.csv,
-          and raw TraceFinder CSVs
-        - extracts top N features by PCA loading magnitude with compound
-          names looked up from raw data by RT matching
-        -> top_features_analysis.csv
-        |
-        v
 Step 9  classification.py
-        - reads peak_matrix_processed.csv (feature set), feature_metadata.csv
+        - reads peak_matrix_processed_hca.csv (feature set), feature_metadata.csv
           (library match scores), feature_name_map.csv (compound names),
           peak_matrix_blank_corrected.csv (areas)
         - matches features against DATA/references/references.csv  -> class 1
@@ -169,6 +175,71 @@ The pipeline is deliberately linear through Steps 1-3 (each step depends on
 the previous), then parallel at Steps 4-6 (independent analyses sharing the
 same processed matrices). Steps 7 and 8 are post-analysis reporting steps
 that depend on the outputs of earlier steps but do not modify any shared files.
+
+---
+
+## 1b. Pipeline run management
+
+### Timestamped run folders
+
+Every invocation of `pipeline.py` creates a new subfolder inside `OUTPUT_DIR`
+(default `output/`) named by the local date and time at run start:
+
+```
+output/
+├── pubchem_cache.json          ← shared API cache; not versioned per run
+└── 2026-04-14_15-30-00/        ← one folder per pipeline.py invocation
+    ├── pipeline.log
+    ├── plots/
+    ├── peak_matrix_raw.csv
+    ├── peak_matrix_blank_corrected.csv
+    ├── peak_matrix_processed_pca.csv
+    ├── peak_matrix_processed_hca.csv
+    ├── peak_matrix_processed_volcano.csv
+    └── ...
+```
+
+`config.OUTPUT_DIR` is overridden at runtime to point at the timestamped folder
+before any step executes, so all scripts write their files there automatically
+without any individual script change.
+
+**Why a new folder per run?**
+Re-running the pipeline with changed parameters (different normalization,
+different RT_MARGIN, new data) used to silently overwrite all output files.
+With timestamped folders, every run is preserved. You can compare two runs
+side-by-side by opening their respective folders, and the parameter settings
+that produced each run are recorded in that run's `pipeline.log`.
+
+**`pubchem_cache.json` stays in the base folder** because it is a shared cache
+of PubChem / ClassyFire / NPClassifier API responses. Re-fetching the same
+compounds on every run would be wasteful. The cache is independent of analysis
+parameters and is valid across all runs of the same dataset.
+
+### Pipeline log file
+
+Every run writes `pipeline.log` inside the timestamped run folder. This file
+captures the complete terminal output (stdout + stderr) of that pipeline run,
+including:
+- The parameter summary printed at startup
+- All step-by-step progress messages
+- Any warnings or errors raised during processing
+
+The log is written with a `Tee` (duplicate-stream) mechanism: output still
+appears on the terminal in real time, and every byte is simultaneously written
+to the file. The log is closed and the original streams are restored when
+`main()` returns.
+
+**To review a past run:** open `output/2026-04-14_15-30-00/pipeline.log` in
+any text editor. The parameter summary at the top of the log records the exact
+`config.py` settings that were active for that run.
+
+### Running individual scripts after a full pipeline run
+
+Individual scripts (`python pca.py`, `python volcano.py`, etc.) still read
+`config.OUTPUT_DIR` as set in `config.py` — they do **not** create a new
+timestamped folder. To redirect their output to an existing run folder, either:
+1. Temporarily change `OUTPUT_DIR` in `config.py` to the full timestamped path.
+2. Re-run the full pipeline to get a new consistent run folder.
 
 ---
 
@@ -777,9 +848,9 @@ cache is already complete.
 
 | Service | Rate limit | Implementation |
 |---------|-----------|---------------|
-| PubChem | ≤ 5 req/s (stated) | `time.sleep(PUBCHEM_RATE_LIMIT_DELAY)` before every request; default 0.35 s ≈ 2.9 req/sec |
-| ClassyFire | not stated | `time.sleep(CLASSYFIRE_RATE_LIMIT_DELAY)` before every request; default 1.0 s (conservative) |
-| NPClassifier | not stated | `time.sleep(NPCLASSIFIER_RATE_LIMIT_DELAY)` before every request; default 1.0 s (conservative) |
+| PubChem | ≤ 5 req/s (stated) | `time.sleep(PUBCHEM_RATE_LIMIT_DELAY)` before every request; default 1 s (conservative) |
+| ClassyFire | not stated | `time.sleep(CLASSYFIRE_RATE_LIMIT_DELAY)` before every request; default 3 s (1 s has triggered HTTP 429) |
+| NPClassifier | not stated | `time.sleep(NPCLASSIFIER_RATE_LIMIT_DELAY)` before every request; default 3 s (conservative) |
 | All services | server overload | HTTP 503 triggers exponential back-off: sleep 1, 2, 4, 8, 16 s before retrying (up to 5 attempts) |
 | All services | no redundant calls | Cache checked before every API call; a cache hit skips the network entirely |
 
@@ -906,13 +977,28 @@ class-coloured PCA scores plots or class-annotated volcano plots.
 
 **Script:** `normalization.py`
 **Input:** `peak_matrix_blank_corrected.csv`, `feature_metadata.csv`
-**Output:** `peak_matrix_processed.csv` (for HCA and volcano),
-`peak_matrix_processed_pca.csv` (for PCA)
+**Output:** three analysis-specific matrices:
+- `peak_matrix_processed_pca.csv` — prevalence-filtered + exclusion list; PCA settings
+- `peak_matrix_processed_hca.csv` — full feature set; HCA settings
+- `peak_matrix_processed_volcano.csv` — full feature set; volcano settings (no scaling)
 
 This step transforms the raw feature areas into a form suitable for multivariate
-statistical analysis. Three sequential operations are applied:
-normalization → log transformation → scaling. Two output matrices are produced
-with different pre-processing filters.
+statistical analysis. Three sequential operations are applied per analysis:
+**normalization → log transformation → scaling**.
+
+Each downstream analysis (PCA, HCA, Volcano, Boxplot) independently selects its
+methods via `NORMALIZATION_<X>`, `LOG_BASE_<X>`, and `SCALING_<X>` keys in
+`config.py`. Setting any of these to `None` inherits the global default
+(`NORMALIZATION`, `LOG_BASE`, `SCALING`).
+
+**Recommended settings for plant VOC / GC-MS data:**
+
+| Analysis | Normalization | Log | Scaling | Rationale |
+|----------|--------------|-----|---------|-----------|
+| PCA | PQN | log2 | Pareto | Robust pattern discovery; PQN corrects technical loading variation without suppressing real VOC differences |
+| HCA | PQN | log2 | Pareto | Same as PCA |
+| Volcano | PQN | log2 | **none** | Fold-change must reflect real ratios; scaling distorts magnitudes |
+| Boxplot | none | none | none | Raw areas; y-axis is biologically interpretable |
 
 ---
 
@@ -942,9 +1028,9 @@ When removals occur, an audit file is written (`features_removed_prevalence_pca.
 or `features_removed_prevalence_hca.csv`) listing the feature_id, number of
 detected samples, total samples, and detected fraction.
 
-**Note:** Prevalence filtering is not applied to the volcano analysis within
-`normalization.py` (since volcano.py reads the blank-corrected matrix directly
-and applies its own optional filter).
+Prevalence filtering is applied separately for each analysis using the corresponding
+threshold (`MIN_PREVALENCE_PCA`, `MIN_PREVALENCE_HCA`, `MIN_PREVALENCE_VOLCANO`).
+Audit files are written for each analysis when removals occur.
 
 ---
 
@@ -968,146 +1054,121 @@ exclusion RT and the RT deviation.
 
 ---
 
-### 4.3 Sum normalization
+### 4.3 Normalization methods
 
-**Config:** `NORMALIZATION = "sum"`
+**Config:** `NORMALIZATION` (global) or `NORMALIZATION_<ANALYSIS>` (per-analysis override)
+
+Normalization is applied **sample-wise on raw areas**, before any log transform.
+
+#### `"pqn"` — Probabilistic Quotient Normalization *(recommended)*
+
+Introduced by Dieterle et al. (2006, *Anal. Chem.*) for NMR and since validated
+for GC-MS metabolomics. PQN is the consensus best practice when total signal is
+expected to differ biologically between groups.
+
+**Algorithm:**
+1. Compute the **reference spectrum**: the feature-wise median across all samples.
+   This represents a "typical" sample.
+2. For each sample, compute the **quotient** of each feature value divided by
+   the reference value (features where reference = 0 are excluded).
+3. The **PQN coefficient** for that sample = the median of all feature quotients.
+   Taking the median rather than the mean makes PQN robust: a genuine biological
+   change in a few features does not bias the coefficient.
+4. Divide the entire sample by its PQN coefficient.
+5. Rescale all samples by the median PQN coefficient to preserve the original
+   order of magnitude.
+
+**Why PQN outperforms sum normalization for VOC data:**
+Sum normalization assumes that total signal is a technical artifact; if plants
+genuinely emit more total VOC under a treatment, sum normalization deflates every
+feature in the more-emitting group — including minor compounds that were unchanged
+— producing spurious reverse trends for low-abundance features. PQN's assumption
+is that *most* features are unchanged and uses only the median quotient as the
+correction factor, leaving genuine biological changes intact.
+
+**Limitation:** If the majority of features change between groups (a global
+metabolic shift), the median quotient will be biased and PQN will under-correct.
+In such cases `"none"` (no normalization) or an internal standard is appropriate.
+
+#### `"sum"` — Total-ion-current normalization
 
 ```
-x_normalized(sample j) = x_raw(sample j) / sum_j  ×  median(sum_1, …, sum_n)
+x_norm = x_raw / Σ(column) × median(Σ all columns)
 ```
 
-Where `sum_j = Σ_features(area_ij)` is the total signal in sample `j`.
+Corrects for variation in injection volume or extraction yield by forcing all
+samples to the same total signal. Appropriate only when total metabolic output
+does not differ biologically between groups.
 
-**Step by step:**
-1. Compute the total signal per sample (column sum of the features × samples matrix).
-2. Divide each sample by its total signal → all samples now have the same sum
-   of 1 (relative composition).
-3. Multiply by the median column sum → restores the data to the original
-   magnitude scale centred on a typical sample. This prevents downstream
-   log-transformation from operating on values that are all near 0 or 1.
+#### `"median"` — Median normalization
 
-**Rationale:** Variation in total signal across samples is often technical
-(injection volume, extraction yield, instrument drift) rather than biological.
-Sum normalization removes this global scaling factor. It is the standard
-first-choice normalization for untargeted GC-MS data.
+```
+x_norm = x_raw / median(column) × global_median
+```
 
-**Assumption:** The total metabolic output (total ion current) does not differ
-biologically between groups. If a treatment genuinely increases or decreases
-overall metabolism, sum normalization will suppress this information. In that
-case, an external reference (e.g. an internal standard or a dilution series)
-should be used instead.
+More robust than sum normalization when many features are zero. The median is
+unaffected by zeros, so this method works better for sparse matrices.
+
+#### `"none"` — No normalization
+
+Passes raw areas directly to the log transform. Appropriate for targeted boxplots
+where absolute signal comparability across injections is less critical than
+preserving the true biological direction.
 
 ---
 
-### 4.4 Median normalization (alternative)
+### 4.4 Log transform methods
 
-**Config:** `NORMALIZATION = "median"`
+**Config:** `LOG_BASE` (global) or `LOG_BASE_<ANALYSIS>` (per-analysis override)
 
-```
-x_normalized(sample j) = x_raw(sample j) / median_j  ×  global_median
-```
+Applied after normalization to compress dynamic range. The pseudo-count (+1) is
+added before logarithms so that zeros map to 0.
 
-Where `median_j` is the median non-zero feature intensity in sample `j`, and
-`global_median` is the median of all sample medians.
-
-This is more robust than sum normalization when many features are zero (zeros
-drag the mean downward but do not affect the median). Useful when most features
-are absent in most samples (sparse matrices).
-
----
-
-### 4.5 Log transformation
-
-**Config:** `LOG_BASE`
-
-```
-x_log = log2(x + 1)
-```
-
-The pseudo-count of +1 is added before taking the logarithm so that undetected
-features (area = 0) map cleanly to 0 rather than −∞. This is the standard
-approach in metabolomics and genomics.
-
-**Why log2?**
-- Mass spectrometry signal intensities span several orders of magnitude
-  (typically 3–6 decades). Without transformation, high-abundance features
-  completely dominate Euclidean-distance-based analyses.
-- Log-transformation compresses dynamic range and stabilises variance across
-  features, moving the distribution toward approximate normality.
-- Log2 is conventional in metabolomics: a difference of 1 unit = a 2-fold
-  difference in abundance, which is directly interpretable.
-- A difference of 1 in log2 space equals a 2-fold change.
-
-**Assumption:** Signal intensities are approximately log-normally distributed —
-i.e. the relative rather than absolute differences between samples are
-biologically relevant. This is a well-validated assumption for GC-MS peak areas.
+| Setting | Formula | When to use |
+|---------|---------|-------------|
+| `2` | `log2(x + 1)` | Default; 1 unit = 2-fold difference; conventional in metabolomics |
+| `10` | `log10(x + 1)` | Very wide dynamic ranges (>6 decades); makes axes more readable |
+| `math.e` | `ln(x + 1)` | When natural-log is required (some statistical models) |
+| `"sqrt"` | `√x` | Milder compression; preserves more structure in narrow-range data |
+| `"cbrt"` | `∛x` | Symmetric cube-root; handles negative values after mean-centring |
+| `"none"` | identity | No transformation; use for raw-area boxplots |
 
 ---
 
-### 4.6 Pareto scaling (recommended)
+### 4.5 Scaling methods
 
-**Config:** `SCALING = "pareto"`
+**Config:** `SCALING` (global) or `SCALING_<ANALYSIS>` (per-analysis override)
 
-Applied per feature (row-wise across all samples):
+Applied **feature-wise** (each feature scaled independently across all samples)
+after log transformation. Scaling is always `"none"` for the volcano output matrix
+regardless of `SCALING_VOLCANO`, because scaling distorts fold-change magnitudes.
 
-```
-x_scaled = (x - mean_feature) / sqrt(std_feature)
-```
+| Setting | Formula | Effect |
+|---------|---------|--------|
+| `"pareto"` | `(x − μ) / √σ` | Partial equalisation; retains biological variance structure; **recommended for PCA/HCA** |
+| `"auto"` | `(x − μ) / σ` | Unit variance; all features contribute equally; amplifies noisy features |
+| `"vast"` | `(x − μ) × μ / σ²` | VAST (van den Berg 2006); weights stable (low-CV) features; down-weights noisy ones |
+| `"range"` | `(x − μ) / (max − min)` | Range-normalised; sensitive to outliers |
+| `"level"` | `(x − μ) / μ` | Relative-to-mean; equivalent to expressing each value as a deviation from the feature average |
+| `"none"` | `x` | No scaling; required for volcano and recommended for boxplots |
 
-Where `mean_feature` and `std_feature` (sample SD, ddof=1) are computed across
-all samples for that feature.
-
-**What it does:**
-- Mean-centring (`x − mean`): moves the data to be centred on 0. Required for
-  PCA and HCA to function correctly (otherwise the first PC captures only
-  the mean, not variance structure).
-- Division by `sqrt(std)`: partially reduces the dominance of high-variance
-  (typically high-abundance) features, but less aggressively than auto-scaling.
-
-**Why Pareto over auto-scaling?**
-- Auto-scaling (division by `std`) gives every feature exactly unit variance.
-  This is mathematically elegant but treats a feature with a tiny, noisy signal
-  the same as a feature with a large, reproducible signal. The result is that
-  noise features can dominate PCA components.
-- Pareto scaling retains more biological variance structure by only partially
-  down-weighting high-abundance features.
-- For untargeted GC-MS, Pareto is the consensus recommendation (van den Berg
-  et al. 2006, BMC Genomics).
-
-**Zero-variance features:** Features that are identical across all samples after
-log-transformation (std = 0) cannot be scaled and carry no discriminating
-information. They are automatically dropped and logged to
-`features_removed_zero_variance.csv`.
+**Zero-variance features:** Any feature with `σ = 0` after log transformation
+(identical across all samples) is automatically dropped before scaling and logged
+to `features_removed_zero_variance.csv`.
 
 ---
 
-### 4.7 Auto scaling (alternative)
+### 4.6 Three output matrices
 
-**Config:** `SCALING = "auto"`
+All matrices are transposed to **samples × features** (rows = samples,
+columns = features) — the standard orientation for scikit-learn, seaborn
+clustermap, and most ML/stats libraries.
 
-```
-x_scaled = (x - mean_feature) / std_feature
-```
-
-Gives every feature exactly unit variance after scaling. Use when all features
-should contribute equally to the analysis regardless of abundance, for example
-in targeted analyses where all analytes are of equal interest.
-
----
-
-### 4.8 Two output matrices
-
-Both matrices are transposed to `samples × features` (rows = samples, columns
-= features) — the standard convention for scikit-learn and most ML/stats libraries.
-
-| Matrix | Filters applied | Used by |
-|--------|----------------|---------|
-| `peak_matrix_processed.csv` | Prevalence (HCA threshold), then normalize + log + scale | HCA (Step 5), Volcano (Step 6) via re-normalization |
-| `peak_matrix_processed_pca.csv` | Prevalence (PCA threshold) + exclusion list, then normalize + log + scale | PCA (Step 4) |
-
-When `MIN_PREVALENCE_HCA = 0` and `EXCLUSION_LIST = []` and the two prevalence
-thresholds are identical, the two matrices are identical and the PCA matrix is
-a reference to the same object (not duplicated in memory).
+| Matrix | Filters | Settings | Used by |
+|--------|---------|---------|---------|
+| `peak_matrix_processed_pca.csv` | Prevalence (PCA threshold) + exclusion list | `NORMALIZATION_PCA`, `LOG_BASE_PCA`, `SCALING_PCA` | PCA (Step 4) |
+| `peak_matrix_processed_hca.csv` | Prevalence (HCA threshold) | `NORMALIZATION_HCA`, `LOG_BASE_HCA`, `SCALING_HCA` | HCA (Step 5), dendrogram (Step 5b), classification (Step 9) |
+| `peak_matrix_processed_volcano.csv` | Prevalence (Volcano threshold) | `NORMALIZATION_VOLCANO`, `LOG_BASE_VOLCANO`; scaling always `"none"` | Volcano (Step 6) |
 
 ---
 
@@ -1275,7 +1336,7 @@ loadings scatter, loadings bar chart, and volcano plot.
 ## 8. Step 5 — Hierarchical Cluster Analysis (HCA)
 
 **Script:** `hca.py`
-**Input:** `peak_matrix_processed.csv` (full feature set), `sample_groups.csv`
+**Input:** `peak_matrix_processed_hca.csv` (full feature set), `sample_groups.csv`
 **Output:** `hca_heatmap.png`, `hca_row_order.csv` (sample order), `hca_col_order.csv` (feature order)
 
 ### 6.1 Algorithm and linkage
@@ -1367,7 +1428,7 @@ and one section per annotation column listed in `HCA_CLASS_ANNOTATION_COLUMNS`.
 ## 9. Step 6 — Volcano plot
 
 **Script:** `volcano.py`
-**Input:** `peak_matrix_blank_corrected.csv` (raw blank-corrected areas),
+**Input:** `peak_matrix_processed_volcano.csv` (normalized + log, no scaling),
 `sample_groups.csv`
 **Output:** Per comparison: `volcano_{A}_vs_{B}.png`, `volcano_{A}_vs_{B}.csv`
 
@@ -1378,21 +1439,22 @@ candidates for biological relevance.
 
 ---
 
-### 7.1 Normalization for volcano (no Pareto scaling)
+### 7.1 Input matrix and why no scaling
 
-The blank-corrected raw matrix (not the Pareto-scaled matrix from Step 3) is
-used as input. Within `volcano.py`, normalization and log transformation are
-applied inline using the same formulae as Step 3 (§4.3, §4.5), but **Pareto
-scaling is intentionally omitted**.
+The volcano reads `peak_matrix_processed_volcano.csv`, produced by Step 3 with
+`SCALING_VOLCANO = "none"` (enforced regardless of user setting).
 
-**Why no Pareto scaling for volcano?**
-Pareto scaling mean-centres each feature and divides by the square root of its
-standard deviation. This changes the *absolute values* and *relative magnitudes*
-between features. Fold change (`mean_A / mean_B`) computed from Pareto-scaled
-values would not reflect the true biological fold difference — it would reflect
-a scaled, mean-centred ratio that has no direct biological interpretation.
-Using unscaled log-normalised values preserves the quantitative meaning of
-fold change.
+**Why no scaling for volcano?**
+Scaling (Pareto, auto, etc.) mean-centres each feature and divides by a
+dispersion measure. This changes the *absolute values* and *relative magnitudes*
+between features: fold change (`mean_A / mean_B`) computed from scaled values
+does not reflect the true biological ratio. Using unscaled log-normalised values
+preserves the quantitative meaning of fold change.
+
+The normalization method (`NORMALIZATION_VOLCANO`) and log transform
+(`LOG_BASE_VOLCANO`) are applied by Step 3. PQN normalization is recommended —
+it corrects technical loading variation without suppressing genuine biological
+differences in total VOC output (see §4.3).
 
 ---
 
@@ -1431,31 +1493,31 @@ the strongest biological significance.
 
 ---
 
-### 7.3 Mann-Whitney U test
+### 7.3 Per-feature statistical test
 
-For each feature, the Mann-Whitney U test (also called the Wilcoxon rank-sum
-test) assesses whether the distribution of log-normalised values in group A is
-stochastically greater than in group B.
+**Config:** `STAT_TEST_VOLCANO`
 
-**Why Mann-Whitney?**
-- Non-parametric: makes no assumption about the distribution of feature
-  intensities. With typical metabolomics sample sizes (n = 3–10 per group),
-  normality cannot be verified and a t-test would be unreliable.
-- Robust to outliers: based on ranks rather than raw values.
-- Handles ties: the scipy implementation uses a continuity correction.
-- Two-sided alternative: tests for any difference in location (not just in
-  one direction).
+For each feature a raw p-value is computed comparing the two groups, then
+all p-values are corrected together with Benjamini-Hochberg FDR (§7.4).
+
+| Setting | Test | When to use |
+|---------|------|-------------|
+| `"mannwhitney"` | Mann-Whitney U (Wilcoxon rank-sum) | **Default; recommended for n < 10.** Non-parametric, no normality assumption, robust to outliers. Two-sided. |
+| `"ttest"` | Welch's t-test (unequal variances) | n ≥ 8 per group and distributions are approximately normal (verify with QQ-plot or Shapiro-Wilk). |
+| `"ttest_equal"` | Student's t-test (equal variances) | Only when variance homogeneity (Levene's test) is confirmed. |
+| `"kruskal"` | Kruskal-Wallis | Non-parametric ANOVA; appropriate when extending to >2 groups. |
 
 **Degenerate case handling:**
 If all values in one group are identical (e.g. all zero), scipy raises a
 `ValueError` because ranks cannot be assigned. This is caught and the p-value
 is set to `1.0` (no evidence of difference).
 
-**Limitation:**
-Mann-Whitney tests whether the distributions are *stochastically ordered* but
-does not directly test the mean difference. With very small groups (n = 2–3),
-the minimum achievable p-value is bounded away from 0 regardless of the effect
-size (e.g. with n=3 in each group, the minimum two-sided p-value is ~0.1).
+**Note on sample size limits:**
+With very small groups (n = 2–3), the minimum achievable two-sided p-value for
+Mann-Whitney is bounded: at n=3 vs n=3, the minimum is ~0.1. This means that
+even a perfect separation cannot reach p < 0.05 with n=3 per group. Increasing
+replication is the only solution; the BH-corrected threshold can also be relaxed
+in `VOLCANO_P_THRESHOLD`.
 
 ---
 
@@ -1527,6 +1589,82 @@ The full results table (`volcano_{A}_vs_{B}.csv`) contains all features with
 their `log2FC`, `pvalue`, `adj_pvalue`, and `direction`, regardless of
 significance. This allows the user to re-apply different thresholds without
 re-running the analysis.
+
+---
+
+## 9b. Step 7b — Targeted boxplots
+
+**Script:** `targeted_boxplots.py`
+**Config:** `RUN_TARGETED_BOXPLOTS`, `TARGETED_LIST`, `STAT_TEST_BOXPLOT`
+**Input:** `peak_matrix_blank_corrected.csv`
+**Output:** `targeted_boxplot_data.csv`, `plots/targeted_boxplots.png`
+
+Generates one boxplot panel per compound in `TARGETED_LIST` (falls back to
+`EXCLUSION_LIST` when `TARGETED_LIST` is empty), comparing all groups defined
+in `SAMPLE_GROUPS`.
+
+---
+
+### 9b.1 Compound matching
+
+Each `TARGETED_LIST` entry can be specified two ways:
+
+**RT + m/z proximity** (`[rt, mz, "name"]`):
+The script scans the blank-corrected feature matrix and returns the first
+feature whose `mean_rt` falls within `±EXCLUSION_RT_MARGIN` and whose `mean_mz`
+falls within `±EXCLUSION_MZ_TOLERANCE` of the target values.
+
+**Explicit feature_id** (`[rt, mz, "name", "feature_id"]`):
+Matches by exact feature_id string (e.g. `"41.0384_5.997"`). This is more
+robust when RT or m/z tolerances would match multiple features.
+
+---
+
+### 9b.2 Normalization
+
+**Config:** `NORMALIZATION_BOXPLOT` (default `"none"`), `LOG_BASE_BOXPLOT`
+(default `"none"`), `SCALING_BOXPLOT` (default `"none"`)
+
+Normalization is applied to the entire blank-corrected matrix before extracting
+targeted values, so that multi-sample corrections (such as PQN, which requires
+all samples to compute a reference spectrum) are applied correctly.
+
+**Recommended: `"none"` for all three.**
+Raw chromatographic peak areas are directly interpretable: the y-axis units are
+instrument signal area, and the direction of change matches literature expectations
+without any transformation artifact. Scaling and log-transformation are only
+useful for multivariate methods (PCA, HCA) and should not be applied when the
+goal is to inspect individual compound intensities.
+
+If you do apply normalization (e.g. `"pqn"`) to the boxplots, the y-axis label
+is updated automatically to reflect the transformation chain.
+
+---
+
+### 9b.3 Statistical test
+
+**Config:** `STAT_TEST_BOXPLOT`
+
+A significance test is run between the **first two groups** in `SAMPLE_GROUPS`
+and the result displayed as a star annotation above each boxplot panel. For
+Kruskal-Wallis and ANOVA (multi-group tests), all groups are passed together.
+
+| Setting | Test | When to use |
+|---------|------|-------------|
+| `"mannwhitney"` | Mann-Whitney U | **Default; recommended for n < 10.** Non-parametric, robust to outliers. |
+| `"ttest"` | Welch's t-test | Approximately normal distributions, n ≥ 8 per group. |
+| `"ttest_equal"` | Student's t-test | Equal variances confirmed. |
+| `"wilcoxon"` | Wilcoxon signed-rank | **Paired samples only** (matched treatment/control). Requires equal group sizes. |
+| `"spearman"` | Spearman rank correlation | Groups represent an ordered gradient (dose series, time points). |
+| `"pearson"` | Pearson correlation | Linear relationship expected; normality assumed. |
+| `"kruskal"` | Kruskal-Wallis | Three or more groups; non-parametric ANOVA. |
+| `"anova"` | One-way ANOVA | Three or more groups; normality and equal variances assumed. |
+
+Significance is displayed using the standard star convention:
+`ns` (p ≥ 0.05), `*` (p < 0.05), `**` (p < 0.01), `***` (p < 0.001),
+`****` (p < 0.0001). Note: p-values shown in boxplots are **not** BH-corrected
+(single-compound comparison); the volcano plot should be used for multiple-testing-
+corrected results across all features.
 
 ---
 
@@ -1646,7 +1784,7 @@ python top_features_analysis.py --n 20  # top 20 features
 ## 12. Step 9 — Feature classification
 
 **Script:** `classification.py`
-**Input:** `output/peak_matrix_processed.csv`, `output/peak_matrix_blank_corrected.csv`,
+**Input:** `output/peak_matrix_processed_hca.csv`, `output/peak_matrix_blank_corrected.csv`,
 `output/feature_name_map.csv`, `output/feature_metadata.csv`,
 `DATA/references/references.csv`, `DATA/references/farn1-46*.csv`
 **Output:** `output/classification.csv`
