@@ -25,7 +25,7 @@ Algorithm: Ward linkage + Euclidean distance by default (configurable via
 config.py). Note: Ward linkage requires Euclidean distance; use "average" or
 "complete" linkage if you want to switch to correlation distance.
 
-Input  : output/peak_matrix_processed.csv
+Input  : output/peak_matrix_processed_hca.csv
          output/sample_groups.csv
 Output : see above
 
@@ -488,7 +488,7 @@ def run(cfg=config):
 
     print("-- Step 5: HCA ---------------------------------------------------")
 
-    matrix_path = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_processed.csv")
+    matrix_path = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_processed_hca.csv")
     groups_path = os.path.join(cfg.OUTPUT_DIR, "sample_groups.csv")
 
     for p in (matrix_path, groups_path):

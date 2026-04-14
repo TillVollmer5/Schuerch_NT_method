@@ -7,7 +7,7 @@ For each feature used in HCA (peak_matrix_processed.csv), outputs one row with:
 class (1-4) and note are left blank for manual filling.
 
 Input:
-  output/peak_matrix_processed.csv   - defines the HCA feature set (column headers)
+  output/peak_matrix_processed_hca.csv - defines the HCA feature set (column headers)
   output/peak_matrix_blank_corrected.csv - raw blank-corrected area values
   output/feature_name_map.csv        - feature_id -> compound_name
 
@@ -32,7 +32,7 @@ import config
 
 
 def run(cfg=config):
-    processed_path    = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_processed.csv")
+    processed_path    = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_processed_hca.csv")
     bc_path           = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_blank_corrected.csv")
     name_map_path     = os.path.join(cfg.OUTPUT_DIR, "feature_name_map.csv")
     out_path          = os.path.join(cfg.OUTPUT_DIR, "classification.csv")

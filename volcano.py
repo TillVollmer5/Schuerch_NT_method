@@ -122,30 +122,8 @@ def _load_feature_labels(cfg):
             if pd.notna(name) and str(name).strip()}
 
 
-# --- Normalization (applied inline, without Pareto scaling) ------------------
-
-def _normalize_log2(matrix, normalization):
-    """
-    Apply sum or median normalization then log2(x+1) to a features x samples
-    matrix.  Pareto scaling is intentionally omitted so that fold changes
-    reflect real abundance ratios.
-    """
-    matrix = matrix.copy().apply(pd.to_numeric, errors="coerce").fillna(0)
-
-    if normalization == "sum":
-        col_sums   = matrix.sum(axis=0)
-        median_sum = col_sums.median()
-        if median_sum > 0:
-            matrix = matrix.divide(col_sums.replace(0, np.nan), axis=1) * median_sum
-            matrix = matrix.fillna(0)
-    elif normalization == "median":
-        col_medians   = matrix.median(axis=0)
-        global_median = col_medians.median()
-        if global_median > 0:
-            col_medians = col_medians.replace(0, global_median)
-            matrix      = matrix.divide(col_medians, axis=1) * global_median
-
-    return np.log2(matrix + 1)
+# (normalization is now handled by normalization.py; volcano reads the
+#  pre-built peak_matrix_processed_volcano.csv directly)
 
 
 # --- Statistics ---------------------------------------------------------------
@@ -172,15 +150,42 @@ def _bh_correction(pvalues):
     return adj
 
 
-def compute_volcano_stats(matrix_log2, samples_a, samples_b):
+def _pvalue_for_feature(vals_a, vals_b, test):
     """
-    Compute log2 fold change and Mann-Whitney p-values for every feature.
+    Compute a raw p-value for a single feature given two sample arrays.
+
+    test : str  — value of STAT_TEST_VOLCANO from config
+      "mannwhitney"  - Mann-Whitney U (non-parametric; recommended default)
+      "ttest"        - Welch's t-test (unequal variances)
+      "ttest_equal"  - Student's t-test (equal variances assumed)
+      "kruskal"      - Kruskal-Wallis (same as mannwhitney for two groups)
+    """
+    try:
+        if test == "mannwhitney":
+            _, p = stats.mannwhitneyu(vals_a, vals_b, alternative="two-sided")
+        elif test == "ttest":
+            _, p = stats.ttest_ind(vals_a, vals_b, equal_var=False)
+        elif test == "ttest_equal":
+            _, p = stats.ttest_ind(vals_a, vals_b, equal_var=True)
+        elif test == "kruskal":
+            _, p = stats.kruskal(vals_a, vals_b)
+        else:
+            _, p = stats.mannwhitneyu(vals_a, vals_b, alternative="two-sided")
+    except ValueError:
+        p = 1.0
+    return float(p)
+
+
+def compute_volcano_stats(matrix_log2, samples_a, samples_b, stat_test="mannwhitney"):
+    """
+    Compute log2 fold change and per-feature p-values for a pairwise comparison.
 
     Parameters
     ----------
-    matrix_log2 : DataFrame  features x samples  (log2-normalized)
+    matrix_log2 : DataFrame  features x samples  (log-normalized, no scaling)
     samples_a   : list of str  sample names for group A
     samples_b   : list of str  sample names for group B
+    stat_test   : str  statistical test (see STAT_TEST_VOLCANO in config.py)
 
     Returns
     -------
@@ -195,16 +200,11 @@ def compute_volcano_stats(matrix_log2, samples_a, samples_b):
         vals_b = b.loc[fid].values.astype(float)
 
         log2fc = float(vals_a.mean() - vals_b.mean())
+        pval   = _pvalue_for_feature(vals_a, vals_b, stat_test)
 
-        # Mann-Whitney U; skip if either group has no variance (all zeros)
-        try:
-            _, pval = stats.mannwhitneyu(vals_a, vals_b, alternative="two-sided")
-        except ValueError:
-            pval = 1.0
+        records.append({"feature_id": fid, "log2FC": log2fc, "pvalue": pval})
 
-        records.append({"feature_id": fid, "log2FC": log2fc, "pvalue": float(pval)})
-
-    df             = pd.DataFrame(records).set_index("feature_id")
+    df               = pd.DataFrame(records).set_index("feature_id")
     df["adj_pvalue"] = _bh_correction(df["pvalue"].values)
     return df
 
@@ -404,43 +404,34 @@ def run(cfg=config):
 
     print("-- Step 6: volcano plot ------------------------------------------")
 
-    matrix_path = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_blank_corrected.csv")
+    # Volcano reads the pre-built normalized matrix from normalization.py.
+    # Normalization + log transform were applied there; scaling is always "none"
+    # for volcano to preserve fold-change magnitudes.
+    matrix_path = os.path.join(cfg.OUTPUT_DIR, "peak_matrix_processed_volcano.csv")
     groups_path = os.path.join(cfg.OUTPUT_DIR, "sample_groups.csv")
 
     for p in (matrix_path, groups_path):
         if not os.path.exists(p):
             raise FileNotFoundError(
-                f"{p} not found - run the preceding pipeline steps first."
+                f"{p} not found - run normalization.py first."
             )
 
-    # features x samples (raw blank-corrected areas)
-    matrix       = pd.read_csv(matrix_path, index_col="feature_id")
+    # samples x features (output of normalization.py)
+    matrix_sf    = pd.read_csv(matrix_path, index_col="sample")
     group_series = pd.read_csv(groups_path,  index_col="sample")["group"]
 
-    # keep only samples present in the matrix
-    shared_samples = [s for s in matrix.columns if s in group_series.index]
-    matrix         = matrix[shared_samples]
+    # align to samples present in both
+    shared_samples = [s for s in matrix_sf.index if s in group_series.index]
+    matrix_sf      = matrix_sf.loc[shared_samples]
     group_series   = group_series.reindex(shared_samples)
 
+    # transpose to features x samples for compute_volcano_stats
+    matrix_log2 = matrix_sf.T
+
     available_groups = sorted(group_series.unique())
-    print(f"  features  : {matrix.shape[0]}")
-    print(f"  samples   : {matrix.shape[1]}")
+    print(f"  features  : {matrix_log2.shape[0]}")
+    print(f"  samples   : {matrix_log2.shape[1]}")
     print(f"  groups    : {available_groups}")
-
-    # optional prevalence filter (applied before normalization)
-    min_prev = getattr(cfg, "MIN_PREVALENCE_VOLCANO", 0.0)
-    if min_prev > 0.0:
-        detected_fraction = (matrix > 0).mean(axis=1)
-        keep   = detected_fraction >= min_prev
-        n_rem  = int((~keep).sum())
-        matrix = matrix.loc[keep]
-        print(f"  prevalence filter: removed {n_rem} feature(s) "
-              f"detected in < {min_prev*100:.0f}% of samples  "
-              f"({matrix.shape[0]} retained)")
-
-    # apply normalization + log2 (no Pareto scaling)
-    print(f"  normalization: {cfg.NORMALIZATION}  +  log2(x+1)")
-    matrix_log2 = _normalize_log2(matrix, cfg.NORMALIZATION)
 
     # resolve comparisons
     comparisons = _resolve_comparisons(cfg.VOLCANO_COMPARISONS, available_groups)
@@ -448,10 +439,13 @@ def run(cfg=config):
         print("  [warning] no valid comparisons to run.")
         return {}
 
+    stat_test = getattr(cfg, "STAT_TEST_VOLCANO", "mannwhitney")
+    print(f"  stat test  : {stat_test}  (BH-FDR corrected)")
+
     label_map   = _load_feature_labels(cfg) or None
 
     # class annotation (highlight + class label suffixes) — built once for all comparisons
-    highlight_map, class_label_map = _load_class_annotation(cfg, matrix.index)
+    highlight_map, class_label_map = _load_class_annotation(cfg, matrix_log2.index)
     if highlight_map:
         print(f"  class highlight    : {len(highlight_map)} feature(s) highlighted")
     if class_label_map:
@@ -466,7 +460,8 @@ def run(cfg=config):
 
         print(f"\n  {group_a} (n={len(samples_a)}) vs {group_b} (n={len(samples_b)})")
 
-        results = compute_volcano_stats(matrix_log2, samples_a, samples_b)
+        results = compute_volcano_stats(matrix_log2, samples_a, samples_b,
+                                        stat_test=stat_test)
         results = classify(results,
                            fc_thresh=cfg.VOLCANO_FC_THRESHOLD,
                            p_thresh =cfg.VOLCANO_P_THRESHOLD)
