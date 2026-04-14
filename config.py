@@ -206,7 +206,7 @@ FEATURE_LABEL = "id"         # how to label features in plots and axes
                               #          when no name is available
 
 # --- PCA (pca.py) -------------------------------------------------------------
-N_COMPONENTS    = 3   # number of principal components to compute and save
+N_COMPONENTS    = 2   # number of principal components to compute and save
                       # increase to retain more dimensions (e.g. 5 for scree plot)
 
 PCA_PLOT_X      = 1   # PC number to plot on the X axis (1-indexed)
@@ -215,9 +215,9 @@ PCA_PLOT_Y      = 2   # PC number to plot on the Y axis (1-indexed)
 PCA_ELLIPSE      = True  # draw 95 % confidence ellipses per group (requires scipy)
 PCA_TOP_LOADINGS = 10   # number of top-loading features to label in the loadings scatter plot
                         # set to 0 to skip labels
-PCA_BAR_TOP      = 20   # number of features shown in the loading bar chart (pca_loadings_bar.png)
-                        # selected by Euclidean distance in the PC_x/PC_y loading plane;
-                        # increase to inspect more candidates (e.g. 20)
+PCA_BAR_TOP      = 10   # number of features shown in the loading bar chart (pca_loadings_bar.png)
+                        # and exported to top_features_analysis.csv.
+                        # Selected by Euclidean distance in the PCA_PLOT_X/PCA_PLOT_Y loading plane.
 
 # --- Compound class plots (compound_class_plots.py) --------------------------
 RUN_CLASS_PLOTS = True
@@ -357,7 +357,7 @@ PUBCHEM_CACHE_ONLY = False
 #         deleting the cache file).  Already-cached entries are still served
 #         from the cache and never re-fetched.
 
-PUBCHEM_USER_AGENT = "Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; contact: helene.gurtner@students.unibe.ch)"
+PUBCHEM_USER_AGENT = "Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; contact: till.vollmer@unibe.ch)"
 # Replace YOUR_EMAIL_HERE with your real email address.
 # PubChem's usage policy requests a descriptive User-Agent so they can contact
 # you if your script causes unexpected server load.

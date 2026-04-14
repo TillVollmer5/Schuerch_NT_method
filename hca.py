@@ -195,6 +195,7 @@ def _build_col_colors(cfg, feature_ids):
         for i, v in enumerate(unassigned):
             color_map[v] = tuple(palette[i])
 
+        gray = (0.6, 0.6, 0.6)
         color_map["Unknown"] = gray
 
         result_cols[col] = vals.map(color_map)

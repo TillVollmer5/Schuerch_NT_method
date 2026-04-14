@@ -1,22 +1,25 @@
 """
 top_features_analysis.py - Extract highest-loading PCA features with sample details.
 
-Creates a CSV table showing the top N features by loading magnitude, with:
-  - Compound name (from raw data matching)
-  - Retention time
-  - Peak area in each sample
-  - Sample name
-  - PC1, PC2, PC3 loadings
+Creates a CSV table showing the top N features by 2D Euclidean distance from
+the origin in the PCA_PLOT_X / PCA_PLOT_Y loading plane — the same selection
+criterion used by the loading bar chart (pca_loadings_bar.png) and loading
+scatter plot (pca_loadings.png).
 
-The output includes one row per feature-sample combination where the feature
-was detected (area > 0).
+The number of features is controlled by PCA_BAR_TOP in config.py, so the
+CSV always lists exactly the features shown in the bar chart.
+
+Each row in the output represents one feature-sample combination where the
+feature was detected (area > 0), with columns:
+  - feature_id, compound_name, RT, area, sample
+  - one loading column per computed PC (PC1, PC2, … up to N_COMPONENTS)
 
 Output file: output/top_features_analysis.csv
 
 Usage:
-    python top_features_analysis.py [--n 10]
-    
-    --n, --num-features    Number of top features to extract (default: 10)
+    python top_features_analysis.py [-n N]
+
+    -n, --num-features    Override number of top features (default: PCA_BAR_TOP from config.py)
 """
 
 import os
@@ -117,52 +120,55 @@ def find_compound_name(rt, peak_matrix, feature_id, data_dir, rt_tolerance=0.1):
     return None
 
 
-def get_top_features(loadings_df, feature_metadata_df, n_features=10):
+def get_top_features(loadings_df, feature_metadata_df, n_features=10,
+                     col_x="PC1", col_y="PC2"):
     """
-    Get the top N features by loading magnitude.
-    
+    Get the top N features by 2D Euclidean distance from the origin in the
+    col_x / col_y loading plane — identical to the selection used by the
+    loading bar chart and loading scatter plot.
+
     Parameters
     ----------
     loadings_df : DataFrame
-        Columns: PC1, PC2, PC3 (loadings for each feature)
+        Feature loadings (features x PCs).
     feature_metadata_df : DataFrame
         Columns: feature_id, mean_rt, mean_mz
     n_features : int
-        Number of top features to return
-    
+        Number of top features to return (config: PCA_BAR_TOP).
+    col_x, col_y : str
+        PC column names to use (e.g. "PC1", "PC2"); set from PCA_PLOT_X/Y.
+
     Returns
     -------
     DataFrame
-        Top N features with feature_id, mean_rt, and loading magnitude
+        Top N features sorted by 2D loading distance (descending).
     """
-    # Calculate magnitude of loading vector (PC3 is optional)
-    has_pc3 = "PC3" in loadings_df.columns
-    pc3_sq = loadings_df['PC3']**2 if has_pc3 else 0
-    loadings_df['magnitude'] = np.sqrt(
-        loadings_df['PC1']**2 + loadings_df['PC2']**2 + pc3_sq
-    )
-    
+    lx = loadings_df[col_x].values
+    ly = loadings_df[col_y].values
+    loadings_df['magnitude'] = np.sqrt(lx ** 2 + ly ** 2)
+
     # Sort by magnitude and get top N
     top = loadings_df.nlargest(n_features, 'magnitude')
-    
+
     return top
 
 
-def run(cfg=None, data_dir=None, output_dir=None, n_features=10):
+def run(cfg=None, data_dir=None, output_dir=None, n_features=None):
     """
     Main analysis function.
-    
+
     Parameters
     ----------
     cfg : module or None
         Config module (e.g. import config; run(config)). When provided,
-        data_dir and output_dir are read from it.
+        data_dir, output_dir, n_features, and PC axes are read from it.
     data_dir : str or None
         Directory containing raw sample CSV files (overrides cfg).
     output_dir : str or None
         Directory for output file (overrides cfg).
-    n_features : int
-        Number of top features to analyze
+    n_features : int or None
+        Number of top features to analyze. Defaults to cfg.PCA_BAR_TOP
+        so the CSV always lists the same features as the bar chart.
     """
     if cfg is not None and not isinstance(cfg, str):
         # Called as run(config) from pipeline
@@ -170,6 +176,10 @@ def run(cfg=None, data_dir=None, output_dir=None, n_features=10):
             data_dir = cfg.DATA_DIR
         if output_dir is None:
             output_dir = cfg.OUTPUT_DIR
+        if n_features is None:
+            n_features = cfg.PCA_BAR_TOP
+        pc_x = getattr(cfg, "PCA_PLOT_X", 1)
+        pc_y = getattr(cfg, "PCA_PLOT_Y", 2)
     else:
         # Called standalone or as run(data_dir, output_dir)
         if isinstance(cfg, str):
@@ -179,6 +189,13 @@ def run(cfg=None, data_dir=None, output_dir=None, n_features=10):
             data_dir = config.DATA_DIR
         if output_dir is None:
             output_dir = config.OUTPUT_DIR
+        if n_features is None:
+            n_features = config.PCA_BAR_TOP
+        pc_x = getattr(config, "PCA_PLOT_X", 1)
+        pc_y = getattr(config, "PCA_PLOT_Y", 2)
+
+    col_x = f"PC{pc_x}"
+    col_y = f"PC{pc_y}"
 
     os.makedirs(output_dir, exist_ok=True)
     
@@ -189,6 +206,7 @@ def run(cfg=None, data_dir=None, output_dir=None, n_features=10):
     print(f"    {os.path.join(output_dir, 'pca_loadings.csv')}")
     print(f"    {os.path.join(output_dir, 'peak_matrix_raw.csv')}")
     print(f"    {os.path.join(output_dir, 'feature_metadata.csv')}")
+    print(f"  PC axes        : {col_x} / {col_y}")
     print(f"  Number of top features: {n_features}")
     print()
     
@@ -203,7 +221,8 @@ def run(cfg=None, data_dir=None, output_dir=None, n_features=10):
     
     # Get top features by loading magnitude
     print(f"  Finding top {n_features} features by loading magnitude...")
-    top_features = get_top_features(loadings_df.copy(), metadata_df, n_features=n_features)
+    top_features = get_top_features(loadings_df.copy(), metadata_df,
+                                    n_features=n_features, col_x=col_x, col_y=col_y)
     print(f"    Found {len(top_features)} features")
     print()
     
@@ -211,46 +230,42 @@ def run(cfg=None, data_dir=None, output_dir=None, n_features=10):
     print("  Building output table...")
     rows = []
     
+    # all PC columns present in the loadings file (e.g. PC1, PC2, PC3)
+    pc_cols = [c for c in loadings_df.columns if c.startswith("PC")]
+
     for feature_id in top_features.index:
         if feature_id not in metadata_df.index:
             continue
-        
+
         mean_rt = metadata_df.loc[feature_id, "mean_rt"]
-        pc1 = loadings_df.loc[feature_id, "PC1"]
-        pc2 = loadings_df.loc[feature_id, "PC2"]
-        pc3 = loadings_df.loc[feature_id, "PC3"] if "PC3" in loadings_df.columns else None
-        
+        pc_vals = {c: loadings_df.loc[feature_id, c] for c in pc_cols}
+
         # Find compound name
         compound_name = find_compound_name(mean_rt, peak_matrix, feature_id, data_dir)
         if compound_name is None:
             compound_name = f"Unknown (RT {mean_rt:.4f})"
-        
+
         # Get areas for each sample
         if feature_id in peak_matrix.index:
             areas = peak_matrix.loc[feature_id]
-            
+
             # Add one row per sample with non-zero area
             for sample_name, area in areas.items():
                 if area > 0:  # Only include samples where feature was detected
-                    row = {
-                        "feature_id": feature_id,
+                    rows.append({
+                        "feature_id":    feature_id,
                         "compound_name": compound_name,
-                        "RT": mean_rt,
-                        "area": area,
-                        "sample": sample_name,
-                        "PC1": pc1,
-                        "PC2": pc2,
-                    }
-                    if pc3 is not None:
-                        row["PC3"] = pc3
-                    rows.append(row)
+                        "RT":            mean_rt,
+                        "area":          area,
+                        "sample":        sample_name,
+                        **pc_vals,
+                    })
     
     output_df = pd.DataFrame(rows)
     
-    # Calculate loading magnitude for sorting (PC3 optional)
-    pc3_sq_out = output_df['PC3']**2 if 'PC3' in output_df.columns else 0
+    # Calculate 2D loading distance for sorting (same metric as the plots)
     output_df['loading_magnitude'] = np.sqrt(
-        output_df['PC1']**2 + output_df['PC2']**2 + pc3_sq_out
+        output_df[col_x]**2 + output_df[col_y]**2
     )
     
     # Sort by loading magnitude (descending) then by area (descending)
@@ -290,8 +305,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "-n", "--num-features",
         type=int,
-        default=10,
-        help="Number of top features to extract (default: 10)"
+        default=None,
+        help="Number of top features to extract (default: PCA_BAR_TOP from config.py)"
     )
     
     args = parser.parse_args()
