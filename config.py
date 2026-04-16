@@ -6,6 +6,7 @@ All scripts import their parameters from here.
 """
 
 import math
+from COMPREHENSIVE_CLASS_COLORS import COMPREHENSIVE_CLASS_COLORS
 
 # --- File paths ---------------------------------------------------------------
 DATA_DIR   = "DATA"     # directory containing raw TraceFinder CSV exports
@@ -26,9 +27,9 @@ OUTPUT_DIR = "output"   # all output files are written here
 BLANK_PREFIX  = "Blank"
 
 SAMPLE_GROUPS = [
-    ("S-R", "S-R"),   # group 1 - reference/treatment  (S-R1, S-R2, S-R3)
-    ("S",   "S"),     # group 2 - samples               (S1-S6)
-]
+    ("S",   "S"),     # group 1 - samples               (S1-S6)
+    ("S-R", "S-R"),   # group 2 - reference/treatment  (S-R1, S-R2, S-R3)
+    ]
 
 # --- Feature detection (data_import.py) --------------------------------------
 RT_MARGIN    = 0.05    # minutes  - peaks within this RT window -> same feature
@@ -36,7 +37,7 @@ RT_MARGIN    = 0.05    # minutes  - peaks within this RT window -> same feature
 
 USE_MZ       = True   # if True, also require m/z proximity to merge peaks
                        # recommended for samples with many co-eluting compounds
-MZ_TOLERANCE = 0.0005   # Da  - used only when USE_MZ = True
+MZ_TOLERANCE = 0.001   # Da  - used only when USE_MZ = True
 
 ALIGN_RT          = True   # apply median RT-shift correction across samples before detection
 MZ_ALIGN_TOLERANCE = 0.1   # Da  - m/z window used during RT alignment
@@ -56,6 +57,19 @@ VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 #   [rt,mz,"name"]  - specify RT, m/z, and a name for reference; m/z can be None to ignore m/z in matching
 
 EXCLUSION_LIST = [
+[5.997,  41.0384, "Z-3-Hexenal"],
+[7.735,  83.0492, "E-2-Hexenal"],
+[7.801,  67.0542, "Z-3-Hexenol"],
+[8.958, 104.0621, "Styrene"],
+[12.88,  67.0542, "Z-3-Hexenol acetate"],
+[13.205, 67.0542, "E-2-Hexenol acetate"],
+[13.522,119.0856, "Cymene"],
+[13.665, 41.0384, "Limonene"],
+[15.93,  93.0699, "Linalool"],
+[16.375, 41.0384, "DMNT"],
+[21.529, 117.0573, "Indole"],
+[25.049, 91.0542, "(-)-(E)-Caryophyllene"],
+[28.763, 81.0699, "TMTT"],
 #[5.997, 41.0384, "Z-3-Hexenal"],#3-Hexenal
 #[7.735, 83.0492, "E-2-Hexenal"],#2-Hexenal, (E)- E/Z based on literature
 #[7.801, 67.0542, "Z-3-Hexenol"],#3-Hexen-1-ol, (Z)-
@@ -76,7 +90,7 @@ EXCLUSION_LIST = [
 #[28.763, 81.0699, "TMTT"]#(3E,7E)-4,8,12-Trimethyltrideca-1,3,7,11-tetraene
 ]
 
-EXCLUSION_RT_MARGIN = 0.05   # +- minutes around each listed RT
+EXCLUSION_RT_MARGIN = RT_MARGIN   # +- minutes around each listed RT
 EXCLUSION_MZ_TOLERANCE = MZ_TOLERANCE   # +- Da around each listed m/z based on maximal variance observed
 
 # --- Missingness / prevalence filter ------------------------------------------
@@ -264,7 +278,7 @@ VOLCANO_COMPARISONS  = "all"
 
 VOLCANO_FC_THRESHOLD  = 1.0    # log2 fold-change cutoff (1.0 = 2-fold change)
 VOLCANO_P_THRESHOLD   = 0.05   # Benjamini-Hochberg adjusted p-value threshold
-VOLCANO_TOP_LABELS    = 30     # number of top significant features to label in the plot
+VOLCANO_TOP_LABELS    = 42     # number of top significant features to label in the plot
                                 # ranked by adjusted p-value; set to 0 to suppress labels
 
 STAT_TEST_VOLCANO = "mannwhitney"
@@ -288,7 +302,7 @@ HCA_CMAP              = "vlag"       # diverging colormap suited to mean-centred
 HCA_MAX_FEATURE_LABELS = 50          # label the feature axis when n_features <= this value;
                                      # set to 0 to always hide feature labels
 
-RUN_HCA_DENDROGRAM = True
+RUN_HCA_DENDROGRAM = False
 # Set to False to skip the interactive HTML dendrogram (Step 5b) in pipeline.py.
 # Produces hca_dendrogram.html — no server needed, opens in any browser.
 
@@ -412,52 +426,54 @@ CLASS_LABEL_COLUMN = "subclass"
 #   CLASS_LABEL_COLUMN = "npclassifier_class"  # NP biosynthetic class
 
 # --- Compound class color palette -------------------------------------------
-# Global color registry: maps class value strings → hex colors.
+# Global color registry: maps class value strings → hex colors from COMPREHENSIVE_CLASS_COLORS.py
 # Used consistently in:
 #   - Compound class pie charts    (Step 2d  compound_class_plots.py)
 #   - HCA annotation strips        (Step 5   hca.py)
 #   - Interactive dendrogram pies  (Step 5b  hca_dendrogram.py)
 #
-# Values not listed here are auto-assigned from a tab20 palette in sorted order,
-# so the same unrecognised value always gets the same auto-assigned color.
-# "Unknown", "Unclassified", and "Other" always receive their gray entries below.
-#
-# To add or override a color, add:
-#   "YourClassValue": "#rrggbb",
+# Only named classes are included here; others auto-assign from tab20 palette.
+# CLASS_HIGHLIGHT entries (above) override these colors during visualization.
 
-CLASS_COLORS = {
+# Named classes to include (colors pulled from COMPREHENSIVE_CLASS_COLORS.py)
+_NAMED_CLASSES = [
     # ---- ClassyFire superclass -----------------------------------------------
-    "Lipids and lipid-like molecules":       "#ff7f0e",
-    "Phenylpropanoids and polyketides":      "#9467bd",
-    "Benzenoids":                            "#1f77b4",
-    "Organohalogen compounds":               "#d62728",
-    "Hydrocarbon derivatives":               "#8c564b",
-    "Hydrocarbons":                          "#7f7f7f",
-    "Organic oxygen compounds":              "#17becf",
-    "Organic acids and derivatives":         "#bcbd22",
-    "Organoheterocyclic compounds":          "#e377c2",
-    "Organosulfur compounds":                "#aec7e8",
-    "Alkaloids and derivatives":             "#98df8a",
-    "Organophosphorus compounds":            "#ffbb78",
+    "Lipids and lipid-like molecules",
+    "Phenylpropanoids and polyketides",
+    "Benzenoids",
+    "Organohalogen compounds",
+    "Hydrocarbon derivatives",
+    "Hydrocarbons",
+    "Organic oxygen compounds",
+    "Organic acids and derivatives",
+    "Organoheterocyclic compounds",
+    "Organosulfur compounds",
+    "Alkaloids and derivatives",
+    "Organophosphorus compounds",
     # ---- NPClassifier pathway ------------------------------------------------
-    "Terpenoids":                            "#2ca02c",
-    "Fatty acids":                           "#ff9896",
-    "Polyketides":                           "#c5b0d5",
-    "Shikimates and Phenylpropanoids":       "#f7b6d2",
-    "Alkaloids":                             "#dbdb8d",
+    "Terpenoids",
+    "Fatty acids",
+    "Polyketides",
+    "Shikimates and Phenylpropanoids",
+    "Alkaloids",
+    "Amino acids and Peptides",
+    "Carbohydrates",
     # ---- ClassyFire subclass (selection) ------------------------------------
-    "Sesquiterpenoids":                      "#2ecc71",
-    "Monoterpenoids":                        "#3498db",
-    "Diterpenoids":                          "#1abc9c",
-    "Triterpenoids":                         "#27ae60",
-    "Fatty acids and conjugates":            "#e74c3c",
-    "Fatty alcohols":                        "#c0392b",
-    "Fatty acid esters":                     "#f39c12",
+    "Sesquiterpenoids",
+    "Monoterpenoids",
+    "Diterpenoids",
+    "Triterpenoids",
+    "Fatty acids and conjugates",
+    "Fatty alcohols",
+    "Fatty acid esters",
     # ---- Special / fallback (always gray) -----------------------------------
-    "Unknown":                               "#cccccc",
-    "Unclassified":                          "#aaaaaa",
-    "Other":                                 "#bbbbbb",
-}
+    "Unknown",
+    "Unclassified",
+    "Other",
+]
+
+# Build CLASS_COLORS by pulling from COMPREHENSIVE_CLASS_COLORS
+CLASS_COLORS = {name: COMPREHENSIVE_CLASS_COLORS[name] for name in _NAMED_CLASSES if name in COMPREHENSIVE_CLASS_COLORS}
 
 # --- Compound classification (compound_classification.py) --------------------
 RUN_COMPOUND_CLASSIFICATION = True

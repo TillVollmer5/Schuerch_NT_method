@@ -73,10 +73,16 @@ def load_files(data_dir, blank_prefix, sample_groups):
             blanks[stem] = df
             continue
 
-        # match against sample groups in order (most specific prefix first)
+        # match against sample groups in order
         group = "unknown"
         for group_name, prefix in sample_groups:
-            if name.upper().startswith(prefix.upper()):
+            name_upper = name.upper()
+            prefix_upper = prefix.upper()
+            if name_upper.startswith(prefix_upper):
+                # If next character after prefix is "-", skip this prefix match
+                # to allow longer prefixes (e.g. "S-R") to match instead of "S"
+                if len(name_upper) > len(prefix_upper) and name_upper[len(prefix_upper)] == "-":
+                    continue
                 group = group_name
                 break
 
