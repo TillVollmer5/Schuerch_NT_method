@@ -107,8 +107,8 @@ EXCLUSION_MZ_TOLERANCE = MZ_TOLERANCE   # +- Da around each listed m/z based on 
 #        group but NONE of the other is the most biologically interesting result.
 #        Filtering by overall prevalence would remove exactly those features.
 
-MIN_PREVALENCE_PCA     = 0.35   # e.g. 0.5 = detected in >= 50% of all samples
-MIN_PREVALENCE_HCA     = 0.45   # set > 0 to drop sparse features from the heatmap
+MIN_PREVALENCE_PCA     = 4/12  # e.g. 0.5 = detected in >= 50% of all samples
+MIN_PREVALENCE_HCA     = 4/12  # set > 0 to drop sparse features from the heatmap
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
 # --- Blank correction (blank_correction.py) -----------------------------------
@@ -302,7 +302,7 @@ HCA_CMAP              = "vlag"       # diverging colormap suited to mean-centred
 HCA_MAX_FEATURE_LABELS = 50          # label the feature axis when n_features <= this value;
                                      # set to 0 to always hide feature labels
 
-RUN_HCA_DENDROGRAM = False
+RUN_HCA_DENDROGRAM = True
 # Set to False to skip the interactive HTML dendrogram (Step 5b) in pipeline.py.
 # Produces hca_dendrogram.html — no server needed, opens in any browser.
 
@@ -438,18 +438,20 @@ CLASS_LABEL_COLUMN = "subclass"
 # Named classes to include (colors pulled from COMPREHENSIVE_CLASS_COLORS.py)
 _NAMED_CLASSES = [
     # ---- ClassyFire superclass -----------------------------------------------
-    "Lipids and lipid-like molecules",
-    "Phenylpropanoids and polyketides",
+    "Acetylides",
+    "Alkaloids and derivatives",
     "Benzenoids",
-    "Organohalogen compounds",
     "Hydrocarbon derivatives",
     "Hydrocarbons",
-    "Organic oxygen compounds",
+    "Lipids and lipid-like molecules",
     "Organic acids and derivatives",
+    "Organic nitrogen compounds",
+    "Organic oxygen compounds",
+    "Organohalogen compounds",
     "Organoheterocyclic compounds",
+    "Organometallic compounds",
     "Organosulfur compounds",
-    "Alkaloids and derivatives",
-    "Organophosphorus compounds",
+    "Phenylpropanoids and polyketides",   
     # ---- NPClassifier pathway ------------------------------------------------
     "Terpenoids",
     "Fatty acids",
@@ -474,6 +476,24 @@ _NAMED_CLASSES = [
 
 # Build CLASS_COLORS by pulling from COMPREHENSIVE_CLASS_COLORS
 CLASS_COLORS = {name: COMPREHENSIVE_CLASS_COLORS[name] for name in _NAMED_CLASSES if name in COMPREHENSIVE_CLASS_COLORS}
+
+# --- Group color palette (used in boxplots, HCA, volcano, PCA scores) --------
+# Standardized colors for sample groups to maintain consistency across all plots.
+# Colors are assigned in SAMPLE_GROUPS order: first group → first color, etc.
+GROUP_COLORS = [
+    "#2166ac",   # S     - blue
+    "#d6604d",   # S-R   - red
+    "#4dac26",   # (unused - green)
+    "#8073ac",   # (unused - purple)
+    "#f4a582",   # (unused - orange)
+    "#1a1a1a",   # (unused - black)
+]
+
+# --- Top features bar chart colors (PCA loadings bar) -----------------------
+# Colors for PC_x and PC_y bars in the top loadings visualization.
+# Set to colors DIFFERENT from GROUP_COLORS so they don't conflict with group labeling.
+BAR_TOP_COL_PCX = "#FD7E29"   # darkorange  - PC_x bar
+BAR_TOP_COL_PCY = "#ffa724"   # lightorange - PC_y bar
 
 # --- Compound classification (compound_classification.py) --------------------
 RUN_COMPOUND_CLASSIFICATION = True
