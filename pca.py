@@ -475,8 +475,8 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
     # layout: one bar group per feature, two bars per group
     y_pos   = np.arange(top_n)
     height  = 0.3                         # bar thickness
-    col_pcx = "#2166ac"                    # blue  - PC_x
-    col_pcy = "#d6604d"                    # red   - PC_y
+    col_pcx = config.BAR_TOP_COL_PCX  # green - PC_x (from config)
+    col_pcy = config.BAR_TOP_COL_PCY  # orange - PC_y (from config)
 
     fig_h = max(4.0, top_n * 0.5 + 1.2)  # scale figure height with n features
     fig, ax = plt.subplots(figsize=(8, fig_h))

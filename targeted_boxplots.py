@@ -301,8 +301,7 @@ def run(cfg=_config_module):
         axs[i].set_visible(False)
 
     # color cycle for groups
-    default_colors = ["#e07070", "#6fa8d6", "#78c478", "#d4a96a",
-                      "#a67dc8", "#5bb5b5", "#d4726a", "#8da86e"]
+    default_colors = [    "#2166ac",  "#d6604d"]
     group_colors = {g: default_colors[i % len(default_colors)]
                     for i, g in enumerate(groups_ordered)}
 
@@ -347,11 +346,11 @@ def run(cfg=_config_module):
             median.set_linewidth(1.5)
 
         # overlay individual data points
-        for i, (vals, g) in enumerate(zip(group_data, groups_ordered)):
-            if len(vals) > 0:
-                x = np.random.normal(i + 1, 0.04, size=len(vals))
-                ax.scatter(x, vals, color=group_colors[g], edgecolors="black",
-                           linewidths=0.5, s=18, zorder=3, alpha=0.85)
+        #for i, (vals, g) in enumerate(zip(group_data, groups_ordered)):
+        #    if len(vals) > 0:
+        #        x = np.random.normal(i + 1, 0.04, size=len(vals))
+        #        ax.scatter(x, vals, color=group_colors[g], edgecolors="black",
+        #                   linewidths=0.5, s=18, zorder=3, alpha=0.85)
 
         # y-axis padding
         non_empty = [v for v in group_data if len(v) > 0]
