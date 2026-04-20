@@ -60,7 +60,7 @@ EXCLUSION_LIST = [
 [5.997,  41.0384, "Z-3-Hexenal"],
 [7.735,  83.0492, "E-2-Hexenal"],
 [7.801,  67.0542, "Z-3-Hexenol"],
-[8.958, 104.0621, "Styrene"],
+#[8.958, 104.0621, "Styrene"], #no wait it is not isoprene
 [12.88,  67.0542, "Z-3-Hexenol acetate"],
 [13.205, 67.0542, "E-2-Hexenol acetate"],
 [13.522,119.0856, "Cymene"],
@@ -142,7 +142,7 @@ BLANK_REFERENCE_MODE = "max"
 # "each" - each blank file is compared independently; a sample/group/mean fails
 #           if its fold change falls below FOLD_CHANGE_THRESHOLD for ANY blank file
 
-BLANK_EXCLUDE_KEYWORDS = ["silan", "Silan", "Si", "siloxane", "Siloxane"]
+BLANK_EXCLUDE_KEYWORDS = ["silan", "Silan", "Si", "siloxane", "Siloxane","Diisopropylnaphthalene", "bromo","chloro","fluoro" ]
 # Features whose compound name or molecular formula contains any of these
 # substrings (case-insensitive) are removed after blank correction.
 # Useful for stripping known instrument/column contaminants by name or element.
@@ -228,7 +228,7 @@ TARGETED_LIST = [
 [5.997,  41.0384, "Z-3-Hexenal"],
 [7.735,  83.0492, "E-2-Hexenal"],
 [7.801,  67.0542, "Z-3-Hexenol"],
-[8.958, 104.0621, "Styrene"],
+#[8.958, 104.0621, "Styrene"], #no wait it is not isoprene
 [12.88,  67.0542, "Z-3-Hexenol acetate"],
 [13.205, 67.0542, "E-2-Hexenol acetate"],
 [13.522,119.0856, "Cymene"],
@@ -343,9 +343,9 @@ PCA_PLOT_X      = 1   # PC number to plot on the X axis (1-indexed)
 PCA_PLOT_Y      = 2   # PC number to plot on the Y axis (1-indexed)
 
 PCA_ELLIPSE      = True  # draw 95 % confidence ellipses per group (requires scipy)
-PCA_TOP_LOADINGS = 10   # number of top-loading features to label in the loadings scatter plot
+PCA_TOP_LOADINGS = 30   # number of top-loading features to label in the loadings scatter plot
                         # set to 0 to skip labels
-PCA_BAR_TOP      = 10   # number of features shown in the loading bar chart (pca_loadings_bar.png)
+PCA_BAR_TOP      = 30   # number of features shown in the loading bar chart (pca_loadings_bar.png)
                         # and exported to top_features_analysis.csv.
                         # Selected by Euclidean distance in the PCA_PLOT_X/PCA_PLOT_Y loading plane.
 
