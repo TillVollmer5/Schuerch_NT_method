@@ -149,7 +149,8 @@ Step 3  normalization.py
 Step 7  top_features_analysis.py
         - reads pca_loadings.csv, peak_matrix_raw.csv, feature_metadata.csv,
           and raw TraceFinder CSVs
-        - extracts top N features by Euclidean PCA loading magnitude
+        - extracts top N features by group-separation score
+          (between-group scatter in PC score space, same criterion as plots)
           with compound names looked up from raw data by RT matching
         -> top_features_analysis.csv
         |
@@ -1261,20 +1262,32 @@ unreliable guides and should be treated as visual orientation, not inference.
 
 **Loadings scatter (`pca_loadings.png`):**
 Each feature is plotted as a point at `(loading_PC_x, loading_PC_y)`. The top
-`PCA_TOP_LOADINGS` features by Euclidean distance from the origin are labelled
-and highlighted in red.
+`PCA_TOP_LOADINGS` features are labelled and highlighted based on their
+**group-separation score** — how strongly their loading direction aligns with
+the axis of maximum between-group separation in the score plot.
+
+The separation score for feature *i* is the quadratic form:
 
 ```
-distance_i = sqrt(loading_PC_x_i² + loading_PC_y_i²)
+score_i = l_i^T · B · l_i
 ```
 
-Features far from the origin drive the separation of samples along those PCs.
+where `l_i = (loading_PC_x_i, loading_PC_y_i)` is the feature's loading vector
+and `B` is the between-group scatter matrix of the PC scores:
+
+```
+B = (1/N) · Σ_g  n_g · (centroid_g − grand_mean)(centroid_g − grand_mean)^T
+```
+
+This selects features whose loading direction points toward where groups
+are most spread apart in the score plot, rather than features that simply
+have the longest loading vector regardless of direction.
 
 **Loading bar chart (`pca_loadings_bar.png`):**
-The same top-N selection is used. Features are sorted by their PC_x loading
-(ascending) so that the direction of effect (positive vs negative PC_x) is
-immediately visible. Each feature gets two bars — one for PC_x and one for PC_y
-— shown simultaneously, with value labels at bar ends.
+The same top-N group-separation selection is used. Features are sorted by
+their PC_x loading (ascending) so that the direction of effect (positive vs
+negative PC_x) is immediately visible. Each feature gets two bars — one for
+PC_x and one for PC_y — shown simultaneously, with value labels at bar ends.
 
 **Feature labels in plots:**
 When `FEATURE_LABEL = "name"`, compound names from `feature_name_map.csv` are
@@ -1737,16 +1750,28 @@ This read-only reporting step identifies the features with the highest influence
 on the PCA result and summarises their peak areas per sample together with
 compound names resolved from the raw data.
 
-**Feature selection — loading magnitude:**
+**Feature selection — group-separation score:**
 
-For each feature, the Euclidean magnitude of its loading vector is computed:
+For each feature, a group-separation score is computed as the quadratic form of
+its loading vector with the between-group scatter matrix **B** of the PCA scores:
 
-$$\text{magnitude}_i = \sqrt{PC1_i^2 + PC2_i^2 (+ PC3_i^2)}$$
+$$\text{score}_i = \mathbf{l}_i^\top \mathbf{B}\, \mathbf{l}_i$$
 
-PC3 is included only when a third component was computed (`N_COMPONENTS = 3`).
-The top `N` features (default 10, configurable via `--num-features`) with the
-highest magnitude are selected. These are the features that most strongly drive
-sample separation in the PCA scores plot.
+where $\mathbf{l}_i$ is the feature's loading vector on the plotted PC axes and
+**B** is the between-group scatter matrix:
+
+$$\mathbf{B} = \frac{1}{N} \sum_g n_g \,(\bar{\mathbf{s}}_g - \bar{\mathbf{s}})(\bar{\mathbf{s}}_g - \bar{\mathbf{s}})^\top$$
+
+$\bar{\mathbf{s}}_g$ is the centroid of group *g* in score space, $\bar{\mathbf{s}}$
+is the grand mean, and $n_g$ is the group size.
+
+This selects features whose loading direction aligns with the axis of maximum
+between-group separation in the score plot — not simply features with the
+longest loading vector. The top `N` features (default 10, configurable via
+`--num-features`) with the highest score are selected.
+
+`pca_scores.csv` and `sample_groups.csv` must be present (produced by `pca.py`).
+If they are not found, the script falls back to Euclidean loading magnitude.
 
 **Compound name resolution:**
 For each top feature, the script searches the raw TraceFinder CSV files for
@@ -1770,7 +1795,7 @@ that TraceFinder files with an extra metadata header row are handled correctly.
 | `PC3` | Feature loading on PC3 (column absent when `N_COMPONENTS < 3`) |
 
 One row is written per detected sample per feature (only samples where area > 0
-are included). Rows are sorted by loading magnitude (descending) then area
+are included). Rows are sorted by group-separation score (descending) then area
 (descending).
 
 **Standalone usage:**

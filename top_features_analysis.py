@@ -121,11 +121,11 @@ def find_compound_name(rt, peak_matrix, feature_id, data_dir, rt_tolerance=0.1):
 
 
 def get_top_features(loadings_df, feature_metadata_df, n_features=10,
-                     col_x="PC1", col_y="PC2"):
+                     col_x="PC1", col_y="PC2", sep_scores=None):
     """
-    Get the top N features by 2D Euclidean distance from the origin in the
-    col_x / col_y loading plane — identical to the selection used by the
-    loading bar chart and loading scatter plot.
+    Get the top N features by group-separation score when *sep_scores* is
+    provided, otherwise by 2D Euclidean distance from the origin — matching
+    the selection used by the loading bar chart and loading scatter plot.
 
     Parameters
     ----------
@@ -137,19 +137,25 @@ def get_top_features(loadings_df, feature_metadata_df, n_features=10,
         Number of top features to return (config: PCA_BAR_TOP).
     col_x, col_y : str
         PC column names to use (e.g. "PC1", "PC2"); set from PCA_PLOT_X/Y.
+    sep_scores : ndarray or None
+        Per-feature group-separation scores (same row order as loadings_df).
 
     Returns
     -------
     DataFrame
-        Top N features sorted by 2D loading distance (descending).
+        Top N features sorted by selection criterion (descending).
     """
-    lx = loadings_df[col_x].values
-    ly = loadings_df[col_y].values
-    loadings_df['magnitude'] = np.sqrt(lx ** 2 + ly ** 2)
+    if sep_scores is not None:
+        loadings_df = loadings_df.copy()
+        loadings_df['_score'] = sep_scores
+    else:
+        lx = loadings_df[col_x].values
+        ly = loadings_df[col_y].values
+        loadings_df = loadings_df.copy()
+        loadings_df['_score'] = np.sqrt(lx ** 2 + ly ** 2)
 
-    # Sort by magnitude and get top N
-    top = loadings_df.nlargest(n_features, 'magnitude')
-
+    top = loadings_df.nlargest(n_features, '_score')
+    top = top.drop(columns=['_score'])
     return top
 
 
@@ -215,14 +221,36 @@ def run(cfg=None, data_dir=None, output_dir=None, n_features=None):
     loadings_df = pd.read_csv(os.path.join(output_dir, "pca_loadings.csv"), index_col=0)
     peak_matrix = pd.read_csv(os.path.join(output_dir, "peak_matrix_raw.csv"), index_col=0)
     metadata_df = pd.read_csv(os.path.join(output_dir, "feature_metadata.csv"), index_col=0)
-    
+
     print(f"    Loaded peak matrix with {peak_matrix.shape[0]} features x {peak_matrix.shape[1]} samples")
     print()
-    
-    # Get top features by loading magnitude
-    print(f"  Finding top {n_features} features by loading magnitude...")
+
+    # Compute group-separation scores (same criterion as pca.py plots)
+    sep_scores = None
+    scores_path = os.path.join(output_dir, "pca_scores.csv")
+    groups_path = os.path.join(output_dir, "sample_groups.csv")
+    if os.path.exists(scores_path) and os.path.exists(groups_path):
+        try:
+            from pca import _group_separation_scores
+            scores_df    = pd.read_csv(scores_path,  index_col="sample")
+            group_series = pd.read_csv(groups_path,  index_col="sample")["group"]
+            sep_scores   = _group_separation_scores(
+                loadings_df, scores_df, group_series, [col_x, col_y])
+            print(f"  Feature selection    : group-separation score ({col_x}/{col_y})")
+        except Exception as e:
+            print(f"  [info] Could not compute separation scores ({e}); "
+                  "falling back to Euclidean distance.")
+    else:
+        print(f"  [info] pca_scores.csv or sample_groups.csv not found; "
+              "using Euclidean distance for feature selection.")
+    print()
+
+    # Get top features
+    criterion = "group separation" if sep_scores is not None else "loading magnitude"
+    print(f"  Finding top {n_features} features by {criterion}...")
     top_features = get_top_features(loadings_df.copy(), metadata_df,
-                                    n_features=n_features, col_x=col_x, col_y=col_y)
+                                    n_features=n_features, col_x=col_x, col_y=col_y,
+                                    sep_scores=sep_scores)
     print(f"    Found {len(top_features)} features")
     print()
     
@@ -263,16 +291,24 @@ def run(cfg=None, data_dir=None, output_dir=None, n_features=None):
     
     output_df = pd.DataFrame(rows)
     
-    # Calculate 2D loading distance for sorting (same metric as the plots)
-    output_df['loading_magnitude'] = np.sqrt(
-        output_df[col_x]**2 + output_df[col_y]**2
-    )
-    
-    # Sort by loading magnitude (descending) then by area (descending)
-    output_df = output_df.sort_values(["loading_magnitude", "area"], ascending=[False, False])
-    
+    # Attach per-feature sort key (separation score or Euclidean fallback)
+    score_map = {}
+    if sep_scores is not None:
+        for fid, sc in zip(loadings_df.index, sep_scores):
+            score_map[fid] = sc
+    else:
+        for fid in loadings_df.index:
+            lx_v = loadings_df.loc[fid, col_x]
+            ly_v = loadings_df.loc[fid, col_y]
+            score_map[fid] = float(np.sqrt(lx_v**2 + ly_v**2))
+
+    output_df['_sort_score'] = output_df['feature_id'].map(score_map)
+
+    # Sort by score (descending) then by area (descending)
+    output_df = output_df.sort_values(["_sort_score", "area"], ascending=[False, False])
+
     # Drop the helper column
-    output_df = output_df.drop(columns=['loading_magnitude'])
+    output_df = output_df.drop(columns=['_sort_score'])
     
     # Write output
     output_file = os.path.join(output_dir, "top_features_analysis.csv")

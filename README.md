@@ -207,7 +207,8 @@ output/
 |-- hca_sample_order.csv                 sample dendrogram leaf order
 |-- hca_feature_order.csv               feature dendrogram leaf order
 |-- volcano_<A>_vs_<B>.csv              per-feature log2FC, p-value, adj. p-value, direction
-|-- top_features_analysis.csv            top N features by PCA loading magnitude,
+|-- top_features_analysis.csv            top N features by group-separation score
+|                                        (between-group scatter in PC score space),
 |                                        with compound name, RT, area per sample,
 |                                        and PC1/PC2(/PC3) loadings
 |-- targeted_boxplot_data.csv            extracted values for TARGETED_LIST compounds

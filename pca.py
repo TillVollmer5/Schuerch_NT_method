@@ -180,6 +180,58 @@ def fit_pca(matrix, n_components):
     return scores_df, loadings_df, variance_df
 
 
+# --- Group separation score ---------------------------------------------------
+
+def _group_separation_scores(loadings_df, scores_df, group_series, pc_cols):
+    """
+    Score each feature by how well its loading direction separates sample groups
+    in the score plot.
+
+    For each feature j, computes the quadratic form  l_j^T * B * l_j  where B
+    is the between-group scatter matrix of the PCA scores on *pc_cols* and l_j
+    is the feature's loading vector on those axes.  Features whose loading
+    direction aligns with the axis of maximum group separation score highest.
+
+    Works for any number of groups and any number of PC axes (2D or 3D).
+
+    Parameters
+    ----------
+    loadings_df  : DataFrame  features x PCs (must contain pc_cols)
+    scores_df    : DataFrame  samples  x PCs (must contain pc_cols)
+    group_series : Series     sample -> group label (index aligned with scores_df)
+    pc_cols      : list[str]  e.g. ["PC1", "PC2"] or ["PC1", "PC2", "PC3"]
+
+    Returns
+    -------
+    ndarray  shape (n_features,)  — one separation score per feature row
+    """
+    n_pcs         = len(pc_cols)
+    groups        = group_series.reindex(scores_df.index).fillna("unknown").values
+    unique_groups = np.unique(groups)
+    n_total       = len(groups)
+
+    grand_means = np.array([scores_df[c].mean() for c in pc_cols])
+
+    # Between-group scatter matrix  B  (n_pcs × n_pcs)
+    B = np.zeros((n_pcs, n_pcs))
+    for g in unique_groups:
+        mask = groups == g
+        n_g  = int(mask.sum())
+        c    = np.array([scores_df.loc[mask, col].mean() for col in pc_cols]) - grand_means
+        B   += n_g * np.outer(c, c)
+    B /= max(n_total, 1)
+
+    # Loading matrix  L  (n_features × n_pcs)
+    L = loadings_df[pc_cols].values
+
+    # Quadratic form for every feature simultaneously:
+    #   score_j = l_j^T B l_j  =  diag(L B L^T)
+    LB         = L @ B                    # (n_features × n_pcs)
+    sep_scores = (LB * L).sum(axis=1)    # elementwise product then row-sum
+
+    return sep_scores
+
+
 # --- Confidence ellipse helper ------------------------------------------------
 
 def _confidence_ellipse(x, y, ax, n_std=2.0, **kwargs):
@@ -268,11 +320,13 @@ def plot_scores(scores_df, group_series, variance_df, pc_x, pc_y,
 
 def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
                   output_path, top_n=10,
-                  highlight_map=None, class_label_map=None):
+                  highlight_map=None, class_label_map=None,
+                  sep_scores=None):
     """
     Scatter plot of feature loadings.
-    The *top_n* features with the largest Euclidean distance from the origin
-    on the plotted plane are labelled.
+    The *top_n* features are labelled.  When *sep_scores* is provided the
+    selection is by group-separation score (between-group scatter quadratic
+    form); otherwise Euclidean distance from the origin is used as fallback.
 
     Parameters
     ----------
@@ -286,6 +340,8 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
                                     of the default grey
     class_label_map : dict or None  feature_id -> class string; when present,
                                     "[class]" is appended to the feature label
+    sep_scores      : ndarray or None  per-feature group-separation scores
+                                    (same row order as loadings_df)
     """
     col_x  = f"PC{pc_x}"
     col_y  = f"PC{pc_y}"
@@ -330,9 +386,9 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
                   loc="upper left", bbox_to_anchor=(1.02, 1),
                   borderaxespad=0)
 
-    # label top features by distance from origin
+    # label top features by group-separation score (or Euclidean fallback)
     if top_n > 0:
-        dist    = np.sqrt(lx ** 2 + ly ** 2)
+        dist    = sep_scores if sep_scores is not None else np.sqrt(lx ** 2 + ly ** 2)
         top_idx = np.argsort(dist)[-top_n:]
         ax.scatter(lx[top_idx], ly[top_idx], color="#111111",
                    s=28, zorder=4, edgecolors="none")
@@ -420,17 +476,17 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
 
 def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
                       output_path, top_n=10,
-                      highlight_map=None, class_label_map=None):
+                      highlight_map=None, class_label_map=None,
+                      sep_scores=None):
     """
-    Grouped horizontal bar chart showing the top *top_n* features by
-    Euclidean distance from the origin in the PC_x / PC_y loading plane.
+    Grouped horizontal bar chart showing the top *top_n* features.
+    When *sep_scores* is provided, features are selected by group-separation
+    score (between-group scatter quadratic form); otherwise Euclidean distance
+    from the origin is used as fallback.
 
     Each feature gets one bar per PC so that positive and negative impacts
     on both components can be read simultaneously.  Features are sorted by
     their PC_x loading so the direction of effect is immediately visible.
-
-    Selection criterion (Euclidean distance) integrates both PCs: a feature
-    that loads strongly on either or both axes will be included.
 
     Parameters
     ----------
@@ -443,6 +499,8 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
                                     highlighted features are drawn in that color
     class_label_map : dict or None  feature_id -> class string; appended as
                                     "[class]" to y-tick labels
+    sep_scores      : ndarray or None  per-feature group-separation scores
+                                    (same row order as loadings_df)
     """
     col_x = f"PC{pc_x}"
     col_y = f"PC{pc_y}"
@@ -451,12 +509,12 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
 
     lx   = loadings_df[col_x].values
     ly   = loadings_df[col_y].values
-    dist = np.sqrt(lx ** 2 + ly ** 2) #euclidean distance from origin for selection 
+    dist = sep_scores if sep_scores is not None else np.sqrt(lx ** 2 + ly ** 2)
 
     highlight_map   = highlight_map   or {}
     class_label_map = class_label_map or {}
 
-    # select top_n by distance, then sort by PC_x loading for display
+    # select top_n by separation score (or Euclidean fallback), then sort by PC_x loading for display
     top_n    = min(top_n, len(loadings_df))
     top_idx  = np.argsort(dist)[-top_n:]
     top_idx  = top_idx[np.argsort(lx[top_idx])]   # sort ascending by PC_x
@@ -510,9 +568,10 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
             tick.set_color(highlight_map[fid])
 
     ax.set_xlabel("Loading value", fontsize=10)
+    criterion = "group separation" if sep_scores is not None else "Euclidean distance"
     ax.set_title(
-        f"Top {top_n} features by loading magnitude\n"
-        f"(selected by Euclidean distance in {col_x}/{col_y} space)",
+        f"Top {top_n} features by {criterion}\n"
+        f"({col_x}/{col_y} loading plane)",
         fontsize=10, fontweight="bold",
     )
     ax.legend(fontsize=9, framealpha=0.9, loc="upper left")
@@ -664,11 +723,13 @@ def plot_scores_3d(scores_df, group_series, variance_df, output_path):
     fig.write_html(output_path, include_plotlyjs="cdn")
 
 
-def plot_loadings_3d(loadings_df, variance_df, output_path, top_n=10):
+def plot_loadings_3d(loadings_df, variance_df, output_path, top_n=10,
+                     sep_scores=None):
     """
     Interactive 3D loadings plot (PC1 x PC2 x PC3) saved as a self-contained
     HTML file.  All features are shown as grey dots; the top *top_n* features
-    by 3D Euclidean distance from the origin are highlighted and labelled.
+    are highlighted and labelled.  When *sep_scores* is provided selection is
+    by group-separation score; otherwise 3D Euclidean distance is used.
     Hover tooltips show the feature ID and all three loading values.
     """
     import plotly.graph_objects as go
@@ -681,7 +742,7 @@ def plot_loadings_3d(loadings_df, variance_df, output_path, top_n=10):
     lz = loadings_df["PC3"].values
     ids = loadings_df.index.tolist()
 
-    dist    = np.sqrt(lx ** 2 + ly ** 2 + lz ** 2)
+    dist    = sep_scores if sep_scores is not None else np.sqrt(lx ** 2 + ly ** 2 + lz ** 2)
     top_idx = set(np.argsort(dist)[-top_n:]) if top_n > 0 else set()
     bg_idx  = [i for i in range(len(ids)) if i not in top_idx]
     hi_idx  = list(top_idx)
@@ -822,13 +883,21 @@ def run(cfg=config):
                 draw_ellipse=cfg.PCA_ELLIPSE)
     print(f"  -> {out_plot_scores}")
 
+    # compute group-separation scores for top-feature selection
+    pc_plot_cols  = [f"PC{pc_x}", f"PC{pc_y}"]
+    sep_scores_2d = _group_separation_scores(
+        loadings_df, scores_df, group_series, pc_plot_cols)
+    print(f"  top feature selection : group-separation score "
+          f"({f'PC{pc_x}'}/{f'PC{pc_y}'} between-group scatter)")
+
     # 2D loadings plot (always produced)
     out_plot_loadings = os.path.join(plots_dir, "pca_loadings.png")
     plot_loadings(display_loadings, variance_df,
                   pc_x, pc_y, out_plot_loadings,
                   top_n=cfg.PCA_TOP_LOADINGS,
                   highlight_map=highlight_map,
-                  class_label_map=class_label_map)
+                  class_label_map=class_label_map,
+                  sep_scores=sep_scores_2d)
     print(f"  -> {out_plot_loadings}")
 
     # loading bar chart (always produced)
@@ -837,7 +906,8 @@ def run(cfg=config):
                       pc_x, pc_y, out_bar,
                       top_n=cfg.PCA_BAR_TOP,
                       highlight_map=highlight_map,
-                      class_label_map=class_label_map)
+                      class_label_map=class_label_map,
+                      sep_scores=sep_scores_2d)
     print(f"  -> {out_bar}")
 
     # standalone class highlight legend (only when CLASS_HIGHLIGHT is non-empty)
@@ -852,9 +922,12 @@ def run(cfg=config):
         plot_scores_3d(scores_df, group_series, variance_df, out_3d_scores)
         print(f"  -> {out_3d_scores}  (interactive)")
 
+        sep_scores_3d = _group_separation_scores(
+            loadings_df, scores_df, group_series, ["PC1", "PC2", "PC3"])
         out_3d_loadings = os.path.join(plots_dir, "pca_loadings_3d.html")
         plot_loadings_3d(display_loadings, variance_df, out_3d_loadings,
-                         top_n=cfg.PCA_TOP_LOADINGS)
+                         top_n=cfg.PCA_TOP_LOADINGS,
+                         sep_scores=sep_scores_3d)
         print(f"  -> {out_3d_loadings}  (interactive)")
 
     return scores_df, loadings_df, variance_df
