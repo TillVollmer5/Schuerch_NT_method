@@ -7,7 +7,8 @@ and writes the following files to OUTPUT_DIR:
 
   peak_matrix_raw.csv        - features x samples  (missing values filled with 0)
   feature_metadata.csv       - feature_id, mean_rt, mean_mz, cluster spread stats,
-                               n_samples_detected, n_contributing_peaks
+                               n_samples_detected, n_contributing_peaks, library match scores
+                               (si, rsi, hrf, rhrf, delta_ri)
   blank_features.csv         - feature_id, max_blank_area, blank_rt, blank_mz
                                (RT-only matched; one row per feature, max across blanks)
   blank_per_feature.csv      - feature_id, blank_name, blank_area, blank_rt, blank_mz
@@ -73,10 +74,16 @@ def load_files(data_dir, blank_prefix, sample_groups):
             blanks[stem] = df
             continue
 
-        # match against sample groups in order (most specific prefix first)
+        # match against sample groups in order
         group = "unknown"
         for group_name, prefix in sample_groups:
-            if name.upper().startswith(prefix.upper()):
+            name_upper = name.upper()
+            prefix_upper = prefix.upper()
+            if name_upper.startswith(prefix_upper):
+                # If next character after prefix is "-", skip this prefix match
+                # to allow longer prefixes (e.g. "S-R") to match instead of "S"
+                if len(name_upper) > len(prefix_upper) and name_upper[len(prefix_upper)] == "-":
+                    continue
                 group = group_name
                 break
 
@@ -202,7 +209,9 @@ def _pool_peaks(file_dict, value_col, rt_shifts=None, name_col=None):
                     "name":        name_val,
                     "total_score": float(row.get("Total Score", 0) or 0),
                     "si":          float(row.get("SI", 0) or 0),
+                    "rsi":         float(row.get("RSI", 0) or 0),
                     "hrf":         float(row.get("HRF Score", 0) or 0),
+                    "rhrf":        float(row.get("RHRF Score", 0) or 0),
                     "delta_ri":    delta_ri_val,
                 })
             except (ValueError, TypeError):
@@ -360,7 +369,9 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
             "rt_highest_score":   best_peak["rt"],
             "mz_highest_score":   best_peak["mz"],
             "si_highest_score":   best_peak.get("si", ""),
+            "rsi_highest_score":  best_peak.get("rsi", ""),
             "hrf_highest_score":  best_peak.get("hrf", ""),
+            "rhrf_highest_score": best_peak.get("rhrf", ""),
             "delta_ri_highest_score": best_peak.get("delta_ri", None),
             "compound_name":      compound_name,
             "sample_names":       sample_names_map,
@@ -588,7 +599,9 @@ def run(cfg=config):
             "rt_highest_score":         f.get("rt_highest_score", ""),
             "mz_highest_score":         f.get("mz_highest_score", ""),
             "si_highest_score":         f.get("si_highest_score", ""),
+            "rsi_highest_score":        f.get("rsi_highest_score", ""),
             "hrf_highest_score":        f.get("hrf_highest_score", ""),
+            "rhrf_highest_score":       f.get("rhrf_highest_score", ""),
             "delta_ri_highest_score":   f.get("delta_ri_highest_score", None),
         })
     meta = pd.DataFrame(meta_rows).set_index("feature_id")

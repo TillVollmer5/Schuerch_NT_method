@@ -227,8 +227,8 @@ def classify(results, fc_thresh, p_thresh):
 
 # --- Plotting -----------------------------------------------------------------
 
-_COL_UP_A = "#d6604d"   # red   - up in group A
-_COL_UP_B = "#2166ac"   # blue  - up in group B
+_COL_UP_A = "#2166ac"   # blue   - up in group A
+_COL_UP_B = "#d6604d"   # red  - up in group B
 _COL_NS   = "#cccccc"   # grey  - not significant
 
 

@@ -95,19 +95,28 @@ def run(cfg=config):
         """Return (class, note) for class 2/3/4 based on library match scores."""
         if current_cls == 1:
             return current_cls, current_note
+        # Check if compound name contains "peak"
+        compound_name = name_map.get(fid, "")
+        if "peak" in compound_name.lower():
+            return 4, ""
         if fid not in meta.index:
-            return 5, ""
+            return 4, ""
         row = meta.loc[fid]
         si       = float(row.get("si_highest_score", 0) or 0)
+        rsi      = float(row.get("rsi_highest_score", 0) or 0)
         hrf      = float(row.get("hrf_highest_score", 0) or 0)
+        rhrf     = float(row.get("rhrf_highest_score", 0) or 0)
         delta_ri_raw = row.get("delta_ri_highest_score", None)
         try:
             delta_ri = float(delta_ri_raw) if delta_ri_raw not in (None, "", "N/A") else None
         except (ValueError, TypeError):
             delta_ri = None
-        if si >= 800 and hrf >= 90 and delta_ri is not None and abs(delta_ri) <= 50:
+        #if si >= 800 and hrf >= 90 and delta_ri is not None and abs(delta_ri) <= 50:
+        # Level 2: RI matches within 50 units, RHRF > 75, SI > 500, RSI > 600
+        if delta_ri is not None and abs(delta_ri) <= 50 and rhrf > 75 and si > 500 and rsi > 600:
             return 2, ""
-        if si >= 700 and hrf >= 80 and delta_ri is not None and abs(delta_ri) <= 100:
+        #if si >= 700 and hrf >= 80 and delta_ri is not None and abs(delta_ri) <= 100:
+        if rhrf > 75 and si > 500 and rsi > 600:
             return 3, ""
         return 4, ""
 
