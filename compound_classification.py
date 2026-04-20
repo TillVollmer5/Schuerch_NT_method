@@ -590,6 +590,30 @@ def run(cfg=config):
     enriched.to_csv(out_enriched)
     print(f"   Written: {out_enriched}")
 
+    # --- Write feature_metadata_enriched_targeted.csv ------------------------
+    # Filter to only targeted compounds and add delta_rt and delta_mz columns
+    targeted_list = getattr(cfg, "TARGETED_LIST", [])
+    if not targeted_list:
+        targeted_list = getattr(cfg, "EXCLUSION_LIST", [])
+    
+    if targeted_list:
+        # Extract compound names from TARGETED_LIST (entry[2] is the name)
+        targeted_names = set(entry[2] for entry in targeted_list if len(entry) >= 3)
+        
+        # Filter enriched to only targeted compounds
+        targeted_enriched = enriched[
+            enriched["compound_name"].isin(targeted_names)
+        ].copy()
+        
+        # Add delta_rt and delta_mz columns
+        targeted_enriched["delta_rt"] = targeted_enriched["rt_max"] - targeted_enriched["rt_min"]
+        targeted_enriched["delta_mz"] = targeted_enriched["mz_max"] - targeted_enriched["mz_min"]
+        
+        # Write to CSV
+        out_targeted = os.path.join(cfg.OUTPUT_DIR, "feature_metadata_enriched_targeted.csv")
+        targeted_enriched.to_csv(out_targeted)
+        print(f"   Written: {out_targeted}")
+
     # --- Summary ------------------------------------------------------------
     found     = (out_df["classification_status"] == STATUS_FOUND).sum()
     no_cid    = (out_df["classification_status"] == STATUS_CID_MISSING).sum()
