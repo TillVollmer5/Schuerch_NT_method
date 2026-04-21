@@ -268,9 +268,9 @@ def run(cfg=None, data_dir=None, output_dir=None, n_features=None):
         mean_rt = metadata_df.loc[feature_id, "mean_rt"]
         pc_vals = {c: loadings_df.loc[feature_id, c] for c in pc_cols}
 
-        # Find compound name
-        compound_name = find_compound_name(mean_rt, peak_matrix, feature_id, data_dir)
-        if compound_name is None:
+        # Use compound name from feature_metadata (same as data_import.py best-peak logic)
+        compound_name = metadata_df.loc[feature_id, "compound_name"]
+        if not compound_name or pd.isna(compound_name):
             compound_name = f"Unknown (RT {mean_rt:.4f})"
 
         # Get areas for each sample

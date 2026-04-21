@@ -112,7 +112,7 @@ MIN_PREVALENCE_HCA     = 4/12  # set > 0 to drop sparse features from the heatma
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
 # --- Blank correction (blank_correction.py) -----------------------------------
-FOLD_CHANGE_THRESHOLD = 3.0
+FOLD_CHANGE_THRESHOLD = 10.0
 # A feature is removed if:
 #   mean(sample areas) / max(blank area)  <  FOLD_CHANGE_THRESHOLD
 # Features absent from blanks are always retained.
@@ -147,7 +147,7 @@ BLANK_EXCLUDE_KEYWORDS = ["silan", "Silan", "siloxane", "Siloxane", "chloro", "C
 # substrings (case-insensitive) are removed after blank correction.
 # Useful for stripping known instrument/column contaminants by name or element.
 # Examples:
-#   BLANK_EXCLUDE_KEYWORDS = ["silan", "Si"]   # removes siloxanes / Si-containing compounds
+#   BLANK_EXCLUDE_KEYWORDS = ["silan"]   # removes siloxanes / Si-containing compounds
 #   BLANK_EXCLUDE_KEYWORDS = ["column", "phthalate"]
 
 # --- Normalization, log transform, and scaling --------------------------------

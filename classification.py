@@ -140,6 +140,18 @@ def run(cfg=config):
     out.to_csv(out_path, index=False)
     print(f"[classification] Wrote {len(rows)} features to {out_path}")
 
+    # --- Add class column to top_features_analysis.csv -------------------------
+    top_features_path = os.path.join(cfg.OUTPUT_DIR, "top_features_analysis.csv")
+    if os.path.exists(top_features_path):
+        top_df = pd.read_csv(top_features_path)
+        # Create mapping from feature_id to class
+        class_map = {row["feature_id"]: row["class"] for _, row in out.iterrows()}
+        # Add class column
+        top_df["class"] = top_df["feature_id"].map(class_map)
+        # Write back
+        top_df.to_csv(top_features_path, index=False)
+        print(f"[classification] Added 'class' column to {top_features_path}")
+
 
 if __name__ == "__main__":
     run(config)

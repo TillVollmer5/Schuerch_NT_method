@@ -373,6 +373,7 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
             "hrf_highest_score":  best_peak.get("hrf", ""),
             "rhrf_highest_score": best_peak.get("rhrf", ""),
             "delta_ri_highest_score": best_peak.get("delta_ri", None),
+            "sample_highest_score": best_peak.get("sample", ""),
             "compound_name":      compound_name,
             "sample_names":       sample_names_map,
             "sample_areas":       sample_areas,
@@ -603,6 +604,7 @@ def run(cfg=config):
             "hrf_highest_score":        f.get("hrf_highest_score", ""),
             "rhrf_highest_score":       f.get("rhrf_highest_score", ""),
             "delta_ri_highest_score":   f.get("delta_ri_highest_score", None),
+            "sample_highest_score":     f.get("sample_highest_score", ""),
         })
     meta = pd.DataFrame(meta_rows).set_index("feature_id")
     out_meta = os.path.join(cfg.OUTPUT_DIR, "feature_metadata.csv")

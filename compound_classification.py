@@ -597,13 +597,38 @@ def run(cfg=config):
         targeted_list = getattr(cfg, "EXCLUSION_LIST", [])
     
     if targeted_list:
-        # Extract compound names from TARGETED_LIST (entry[2] is the name)
-        targeted_names = set(entry[2] for entry in targeted_list if len(entry) >= 3)
+        # Match targeted compounds by RT and m/z coordinates instead of name
+        rt_margin = getattr(cfg, "EXCLUSION_RT_MARGIN", cfg.RT_MARGIN)
+        mz_tolerance = getattr(cfg, "EXCLUSION_MZ_TOLERANCE", cfg.MZ_TOLERANCE)
         
-        # Filter enriched to only targeted compounds
-        targeted_enriched = enriched[
-            enriched["compound_name"].isin(targeted_names)
-        ].copy()
+        targeted_indices = []
+        for entry in targeted_list:
+            if len(entry) < 2:
+                continue
+            target_rt, target_mz = entry[0], entry[1]
+            target_name = entry[2] if len(entry) >= 3 else None
+            
+            # Match features within RT and m/z tolerance
+            if target_mz is not None:
+                mask = (
+                    (enriched["mean_rt"] >= target_rt - rt_margin) &
+                    (enriched["mean_rt"] <= target_rt + rt_margin) &
+                    (enriched["mean_mz"] >= target_mz - mz_tolerance) &
+                    (enriched["mean_mz"] <= target_mz + mz_tolerance)
+                )
+            else:
+                # Match RT only if m/z is None
+                mask = (
+                    (enriched["mean_rt"] >= target_rt - rt_margin) &
+                    (enriched["mean_rt"] <= target_rt + rt_margin)
+                )
+            
+            matches = enriched[mask].index.tolist()
+            targeted_indices.extend(matches)
+        
+        # Remove duplicates while preserving order
+        targeted_indices = list(dict.fromkeys(targeted_indices))
+        targeted_enriched = enriched.loc[targeted_indices].copy()
         
         # Add delta_rt and delta_mz columns
         targeted_enriched["delta_rt"] = targeted_enriched["rt_max"] - targeted_enriched["rt_min"]
