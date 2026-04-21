@@ -302,7 +302,7 @@ HCA_CMAP              = "vlag"       # diverging colormap suited to mean-centred
 HCA_MAX_FEATURE_LABELS = 50          # label the feature axis when n_features <= this value;
                                      # set to 0 to always hide feature labels
 
-RUN_HCA_DENDROGRAM = True
+RUN_HCA_DENDROGRAM = False
 # Set to False to skip the interactive HTML dendrogram (Step 5b) in pipeline.py.
 # Produces hca_dendrogram.html — no server needed, opens in any browser.
 
