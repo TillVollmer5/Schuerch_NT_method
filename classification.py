@@ -54,9 +54,10 @@ def run(cfg=config):
 
     # Reference compounds for class=1 assignment
     # feature_id format: "{mean_mz:.4f}_{mean_rt:.4f}"
-    ref_path = os.path.join("DATA", "references", "references.csv")
-    farn_path = os.path.join("DATA", "references", "farn1-46.csv")
-    ref_df = pd.read_csv(ref_path)
+    _here     = os.path.dirname(os.path.abspath(__file__))
+    ref_path  = os.path.join(_here, "DATA", "references", "references.csv")
+    farn_path = os.path.join(_here, "DATA", "references", "farn1-46.csv")
+    ref_df  = pd.read_csv(ref_path)
     farn_df = pd.read_csv(farn_path)
     ref_rts   = ref_df["Retention Time"].values.astype(float)
     ref_mzs   = ref_df["Reference m/z"].values.astype(float)

@@ -302,13 +302,18 @@ def run(cfg=None, data_dir=None, output_dir=None, n_features=None):
             ly_v = loadings_df.loc[fid, col_y]
             score_map[fid] = float(np.sqrt(lx_v**2 + ly_v**2))
 
-    output_df['_sort_score'] = output_df['feature_id'].map(score_map)
+    score_col = "separation_score" if sep_scores is not None else "loading_distance"
+    output_df[score_col] = output_df['feature_id'].map(score_map)
 
     # Sort by score (descending) then by area (descending)
-    output_df = output_df.sort_values(["_sort_score", "area"], ascending=[False, False])
+    output_df = output_df.sort_values([score_col, "area"], ascending=[False, False])
 
-    # Drop the helper column
-    output_df = output_df.drop(columns=['_sort_score'])
+    # Move score column to appear right after RT for readability
+    cols = output_df.columns.tolist()
+    cols.remove(score_col)
+    rt_pos = cols.index("RT") + 1
+    cols.insert(rt_pos, score_col)
+    output_df = output_df[cols]
     
     # Write output
     output_file = os.path.join(output_dir, "top_features_analysis.csv")

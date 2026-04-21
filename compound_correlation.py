@@ -51,7 +51,7 @@ def run(cfg=config):
     plots_dir = os.path.join(cfg.OUTPUT_DIR, "plots")
     os.makedirs(plots_dir, exist_ok=True)
 
-    csv_path = os.path.join(cfg.OUTPUT_DIR, "targeted_boxplot.csv")
+    csv_path = os.path.join(cfg.OUTPUT_DIR, "targeted_boxplot_data.csv")
     if not os.path.exists(csv_path):
         print(f"  [compound_correlation] {csv_path} not found; "
               "run targeted_boxplots.py first.")

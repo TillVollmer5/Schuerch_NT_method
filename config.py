@@ -6,6 +6,7 @@ All scripts import their parameters from here.
 """
 
 import math
+import os as _os
 from COMPREHENSIVE_CLASS_COLORS import COMPREHENSIVE_CLASS_COLORS
 
 # --- File paths ---------------------------------------------------------------
@@ -107,7 +108,7 @@ EXCLUSION_MZ_TOLERANCE = MZ_TOLERANCE   # +- Da around each listed m/z based on 
 #        group but NONE of the other is the most biologically interesting result.
 #        Filtering by overall prevalence would remove exactly those features.
 
-MIN_PREVALENCE_PCA     = 4/12  # e.g. 0.5 = detected in >= 50% of all samples
+MIN_PREVALENCE_PCA     = 12/12  # e.g. 0.5 = detected in >= 50% of all samples
 MIN_PREVALENCE_HCA     = 4/12  # set > 0 to drop sparse features from the heatmap
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
@@ -529,7 +530,9 @@ NPCLASSIFIER_RATE_LIMIT_DELAY = 3
 # Seconds to sleep before each NPClassifier API request (npclassifier.gnps2.org).
 # No stated rate limit; 1.0 s is conservative and well-mannered.
 
-PUBCHEM_CACHE_FILE = "output/pubchem_cache.json"
+PUBCHEM_CACHE_FILE = _os.path.join(
+    _os.path.dirname(_os.path.abspath(__file__)), "output", "pubchem_cache.json"
+)
 # Path to the local JSON cache for API responses.
 # The cache stores: compound name -> CID, CID -> properties,
 #                   CID -> SMILES + InChIKey, CID -> ClassyFire taxonomy,
