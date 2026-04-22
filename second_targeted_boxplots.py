@@ -120,7 +120,7 @@ def run(cfg=_config_module):
         ax  = axs[idx]
 
         compound_name = str(sub["compound_name"].iloc[0]) if "compound_name" in sub.columns else ""
-        title = compound_name if len(compound_name) <= MAX_NAME_LEN else fid
+        title = fid #compound_name if len(compound_name) <= MAX_NAME_LEN else
 
         group_data = []
         for g in GROUPS_ORDERED:
@@ -145,11 +145,11 @@ def run(cfg=_config_module):
             median.set_linewidth(1.5)
 
         # overlay individual data points
-        #for i, (vals, g) in enumerate(zip(group_data, GROUPS_ORDERED)):
-        #    if len(vals) > 0:
-        #        x = np.random.normal(i + 1, 0.04, size=len(vals))
-        #        ax.scatter(x, vals, color=GROUP_COLORS[g], edgecolors="black",
-        #                   linewidths=0.5, s=18, zorder=3, alpha=0.85)
+        for i, (vals, g) in enumerate(zip(group_data, GROUPS_ORDERED)):
+            if len(vals) > 0:
+                x = np.random.normal(i + 1, 0.04, size=len(vals))
+                ax.scatter(x, vals, color=GROUP_COLORS[g], edgecolors="black",
+                           linewidths=0.5, s=18, zorder=3, alpha=0.85)
 
         # y-axis padding
         non_empty = [v for v in group_data if len(v) > 0]
