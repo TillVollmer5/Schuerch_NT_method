@@ -162,7 +162,9 @@ def fit_pca(matrix, n_components):
     variance_df : DataFrame  PC -> explained_variance, ratio, cumulative_ratio
     """
     n_components = min(n_components, *matrix.shape)
-    pca          = PCA(n_components=n_components)
+    # random_state=0 ensures reproducible results across devices/platforms
+    # (guards against the randomized SVD solver being selected for larger matrices)
+    pca          = PCA(n_components=n_components, random_state=0)
     scores_arr   = pca.fit_transform(matrix.values)
 
     pc_names    = [f"PC{i + 1}" for i in range(n_components)]
