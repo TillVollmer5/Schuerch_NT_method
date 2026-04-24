@@ -108,7 +108,7 @@ EXCLUSION_MZ_TOLERANCE = MZ_TOLERANCE   # +- Da around each listed m/z based on 
 #        group but NONE of the other is the most biologically interesting result.
 #        Filtering by overall prevalence would remove exactly those features.
 
-MIN_PREVALENCE_PCA     = 12/12  # e.g. 0.5 = detected in >= 50% of all samples
+MIN_PREVALENCE_PCA     = 4/12  # e.g. 0.5 = detected in >= 50% of all samples
 MIN_PREVALENCE_HCA     = 4/12  # set > 0 to drop sparse features from the heatmap
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
@@ -505,7 +505,7 @@ BAR_TOP_COL_PCY = "#ffa724"   # lightorange - PC_y bar
 RUN_COMPOUND_CLASSIFICATION = True
 # Set to False to skip the PubChem classification step entirely in pipeline.py.
 
-PUBCHEM_CACHE_ONLY = False
+PUBCHEM_CACHE_ONLY = True
 # True  - build the output from the local cache only; no network requests are
 #         made.  Compounds not yet in the cache are marked "unnamed" in the
 #         output instead of being queried.  Use this when you are offline, want
@@ -515,7 +515,7 @@ PUBCHEM_CACHE_ONLY = False
 #         deleting the cache file).  Already-cached entries are still served
 #         from the cache and never re-fetched.
 
-PUBCHEM_USER_AGENT = "Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; contact: till.vollmer@unibe.ch)"
+PUBCHEM_USER_AGENT = "Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; contact: helene.gurtner@students.unibe.ch)"
 # Replace YOUR_EMAIL_HERE with your real email address.
 # PubChem's usage policy requests a descriptive User-Agent so they can contact
 # you if your script causes unexpected server load.
