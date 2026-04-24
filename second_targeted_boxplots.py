@@ -171,7 +171,7 @@ def run(cfg=_config_module):
                 ax.text(1.5, bk_y + tick_h * 0.15, p_str,
                         ha="center", va="bottom", fontsize=9)
 
-        ax.set_title(title, fontsize=8, pad=3)
+        ax.set_title(title, fontsize=8, pad=18)
         ax.tick_params(axis="x", labelsize=7)
         ax.tick_params(axis="y", labelsize=7)
         ax.grid(False)
