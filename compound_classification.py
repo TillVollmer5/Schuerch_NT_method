@@ -454,6 +454,16 @@ def run(cfg=config):
         hits = len(names_to_query) - new_cid_lookups
         print(f"   cache hits        : {hits} / {len(names_to_query)} named compounds")
         print(f"   skipped (no cache): {new_cid_lookups}  (set PUBCHEM_CACHE_ONLY=False to fetch)")
+        if new_cid_lookups > 0:
+            hit_rate = hits / len(names_to_query) if names_to_query else 1.0
+            if hit_rate < 0.95:
+                print(
+                    f"   [WARNING] cache hit rate is {hit_rate*100:.0f}% — "
+                    f"{new_cid_lookups} compound(s) will not be classified.\n"
+                    f"   This WILL cause different results between devices if their caches differ.\n"
+                    f"   Fix: copy '{cache_path}' to the other device, or run once with "
+                    f"PUBCHEM_CACHE_ONLY=False on both devices to fill the cache."
+                )
     else:
         print(f"   new CID lookups   : {new_cid_lookups}  (rest served from cache)")
 

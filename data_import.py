@@ -111,31 +111,41 @@ def _read_csv(fp):
 
 # --- RT alignment (optional pre-processing) -----------------------------------
 
-def align_retention_times(file_dict, mz_tolerance=0.1):
+def align_retention_times(file_dict, mz_tolerance=0.1, ref_df=None):
     """
     Apply a median RT-shift correction so that the same compound in different
     samples lands at the same retention time.
 
-    The first file (alphabetically) is used as the alignment reference.
-    Alignment is skipped silently for files missing the required columns.
+    The first file (alphabetically) is used as the alignment reference when
+    *ref_df* is None.  Pass *ref_df* explicitly to align against an external
+    reference (e.g. to align blank files to the same reference as samples).
 
     Returns
     -------
     file_dict : dict  (modified in-place with corrected RTs)
     shifts    : dict  sample_name -> float  (median RT shift applied; 0.0 if none)
+    ref_name  : str   name of the reference used (or "external" if ref_df was passed)
     """
     shifts = {name: 0.0 for name in file_dict}
 
-    if len(file_dict) < 2:
-        return file_dict, shifts
+    if len(file_dict) < 2 and ref_df is None:
+        return file_dict, shifts, (sorted(file_dict.keys())[0] if file_dict else "-")
 
-    ref_name = sorted(file_dict.keys())[0]
-    ref_df   = file_dict[ref_name]
+    if ref_df is not None:
+        # external reference supplied (e.g. sample reference for blank alignment)
+        ref_name  = "external"
+        _ref_df   = ref_df
+    else:
+        ref_name = sorted(file_dict.keys())[0]
+        _ref_df  = file_dict[ref_name]
 
-    if "Reference m/z" not in ref_df.columns or "Retention Time" not in ref_df.columns:
-        return file_dict, shifts
+    if "Reference m/z" not in _ref_df.columns or "Retention Time" not in _ref_df.columns:
+        return file_dict, shifts, ref_name
 
-    ref_sorted = ref_df.sort_values("Reference m/z").reset_index(drop=True)
+    # sort by m/z only — pandas sort_values uses a stable algorithm (mergesort)
+    # so rows with identical m/z retain their original CSV row order, which is
+    # consistent for the same input files on any device
+    ref_sorted = _ref_df.sort_values("Reference m/z").reset_index(drop=True)
 
     for name, df in file_dict.items():
         if name == ref_name:
@@ -159,7 +169,7 @@ def align_retention_times(file_dict, mz_tolerance=0.1):
                 file_dict[name]["Retention Time"] = df["Retention Time"] + shift
                 shifts[name] = float(shift)
 
-    return file_dict, shifts
+    return file_dict, shifts, ref_name
 
 
 # --- Feature detection --------------------------------------------------------
@@ -293,7 +303,9 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
     if not peaks:
         return [], 0
 
-    sorted_peaks = sorted(peaks, key=lambda x: x["rt"])
+    # three-key sort: RT first, then m/z, then sample name — guarantees the
+    # same ordering across platforms and Python dict-insertion orders
+    sorted_peaks = sorted(peaks, key=lambda x: (x["rt"], x["mz"], x["sample"]))
 
     # -- greedy RT clustering --------------------------------------------------
     rt_clusters, cluster = [], [sorted_peaks[0]]
@@ -343,8 +355,16 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
         # one peak per sample (guaranteed by conflict resolution)
         sample_areas = {p["sample"]: p["area"] for p in cl}
 
-        # compound name from the peak with the highest total score across all samples
-        best_peak     = max(cl, key=lambda p: p.get("total_score", 0))
+        # compound name from the peak with the highest total score across all samples.
+        # tiebreakers (si, rsi, area, sample) make selection deterministic when
+        # multiple peaks share the same total_score (e.g. all zero).
+        best_peak     = max(cl, key=lambda p: (
+            p.get("total_score", 0) or 0,
+            p.get("si",          0) or 0,
+            p.get("rsi",         0) or 0,
+            p.get("area",        0) or 0,
+            p.get("sample",     "") or "",
+        ))
         compound_name = best_peak.get("name", "")
 
         # per-sample names (for feature_name_map.csv)
@@ -512,10 +532,14 @@ def run(cfg=config):
     blank_shifts  = {b: 0.0 for b in blanks}
 
     if cfg.ALIGN_RT:
-        samples, sample_shifts = align_retention_times(samples, cfg.MZ_ALIGN_TOLERANCE)
-        blanks,  blank_shifts  = align_retention_times(blanks,  cfg.MZ_ALIGN_TOLERANCE)
-        ref = sorted(samples.keys())[0] if samples else "-"
-        print(f"  RT alignment    : enabled (ref = {ref})")
+        samples, sample_shifts, ref = align_retention_times(samples, cfg.MZ_ALIGN_TOLERANCE)
+        # align blanks to the SAME reference sample so that blank RTs and
+        # sample feature RTs share the same coordinate system
+        ref_df_for_blanks = samples[ref] if ref in samples else None
+        blanks, blank_shifts, _ = align_retention_times(
+            blanks, cfg.MZ_ALIGN_TOLERANCE, ref_df=ref_df_for_blanks
+        )
+        print(f"  RT alignment    : enabled (ref = {ref}, blanks aligned to same ref)")
 
         # save alignment shifts for traceability
         all_shifts = {**sample_shifts, **blank_shifts}
