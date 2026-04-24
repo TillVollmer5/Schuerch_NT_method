@@ -505,7 +505,7 @@ BAR_TOP_COL_PCY = "#ffa724"   # lightorange - PC_y bar
 RUN_COMPOUND_CLASSIFICATION = True
 # Set to False to skip the PubChem classification step entirely in pipeline.py.
 
-PUBCHEM_CACHE_ONLY = False
+PUBCHEM_CACHE_ONLY = True
 # True  - build the output from the local cache only; no network requests are
 #         made.  Compounds not yet in the cache are marked "unnamed" in the
 #         output instead of being queried.  Use this when you are offline, want
@@ -515,7 +515,7 @@ PUBCHEM_CACHE_ONLY = False
 #         deleting the cache file).  Already-cached entries are still served
 #         from the cache and never re-fetched.
 
-PUBCHEM_USER_AGENT = "Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; contact: till.vollmer@unibe.ch)"
+PUBCHEM_USER_AGENT = "Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; contact: helene.gurtner@students.unibe.ch)"
 # Replace YOUR_EMAIL_HERE with your real email address.
 # PubChem's usage policy requests a descriptive User-Agent so they can contact
 # you if your script causes unexpected server load.
