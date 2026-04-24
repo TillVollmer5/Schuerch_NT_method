@@ -101,14 +101,18 @@ def _run(cfg):
     summary.to_csv(out_csv, index=False)
     print(f"[prevalence_histogram] Summary written to {out_csv}")
 
-    # --- Plot -------------------------------------------------------------------
+    # --- Plot (skip k=0 bar — features detected in no sample are not shown) ----
+    plot_k       = k_values[1:]    # 1, 2, ..., N
+    plot_centres = centres[1:]
+    plot_counts  = counts[1:]
+
     fig, ax = plt.subplots(figsize=(max(8, n_samples * 0.65 + 3), 5))
 
     bar_width = step * 0.75
 
     bars = ax.bar(
-        centres,
-        counts,
+        plot_centres,
+        plot_counts,
         width=bar_width,
         color="#4C72B0",
         edgecolor="white",
@@ -118,8 +122,8 @@ def _run(cfg):
     )
 
     # Count labels above each non-empty bar
-    y_max = max(counts) if max(counts) > 0 else 1
-    for bar, cnt in zip(bars, counts):
+    y_max = max(plot_counts) if max(plot_counts) > 0 else 1
+    for bar, cnt in zip(bars, plot_counts):
         if cnt > 0:
             ax.text(
                 bar.get_x() + bar.get_width() / 2.0,
@@ -130,35 +134,37 @@ def _run(cfg):
             )
 
     # Threshold reference lines from config.py
-    thresholds = [
-        ("PCA",     cfg.MIN_PREVALENCE_PCA,     "#D93025", "--"),
-        ("HCA",     cfg.MIN_PREVALENCE_HCA,     "#E07B00", ":"),
-        ("Volcano", cfg.MIN_PREVALENCE_VOLCANO, "#2E8B57", "-."),
-    ]
     legend_entries = []
-    for name, thresh, color, ls in thresholds:
-        if thresh > 0.0:
-            line = ax.axvline(
-                thresh - step / 2,      # left edge of the first included bin
-                color=color, linestyle=ls, linewidth=1.8, zorder=4,
-                label=f"{name} min prevalence ({thresh:.0%})",
-            )
-            legend_entries.append(line)
+    show_thresholds = getattr(cfg, "PREVALENCE_HISTOGRAM_SHOW_THRESHOLDS", True)
+    if show_thresholds:
+        thresholds = [
+            ("PCA",     cfg.MIN_PREVALENCE_PCA,     "#D93025", "--"),
+            ("HCA",     cfg.MIN_PREVALENCE_HCA,     "#E07B00", ":"),
+            ("Volcano", cfg.MIN_PREVALENCE_VOLCANO, "#2E8B57", "-."),
+        ]
+        for name, thresh, color, ls in thresholds:
+            if thresh > 0.0:
+                line = ax.axvline(
+                    thresh - step / 2,      # left edge of the first included bin
+                    color=color, linestyle=ls, linewidth=1.8, zorder=4,
+                    label=f"{name} min prevalence ({thresh:.0%})",
+                )
+                legend_entries.append(line)
 
-    # X-axis: one tick per k/N value; label as "k/N (xx%)"
-    ax.set_xticks(centres)
+    # X-axis: one tick per k/N value (starting at k=1); label as "k/N (xx%)"
+    ax.set_xticks(plot_centres)
     if n_samples <= 20:
         tick_labels = [
-            f"{k}/{n_samples}\n({k/n_samples:.0%})" for k in k_values
+            f"{k}/{n_samples}\n({k/n_samples:.0%})" for k in plot_k
         ]
         ax.set_xticklabels(tick_labels, fontsize=8)
     else:
         # Thin out labels to avoid overlap when there are many samples
         tick_step  = max(1, round(n_samples / 10))
-        visible    = set(range(0, n_samples + 1, tick_step)) | {n_samples}
+        visible    = set(range(1, n_samples + 1, tick_step)) | {n_samples}
         tick_labels = [
             f"{k}/{n_samples}\n({k/n_samples:.0%})" if k in visible else ""
-            for k in k_values
+            for k in plot_k
         ]
         ax.set_xticklabels(tick_labels, fontsize=8)
 
@@ -170,10 +176,11 @@ def _run(cfg):
         fontsize=13, fontweight="bold", pad=10,
     )
 
-    ax.set_xlim(-step * 0.7, 1.0 + step * 0.7)
+    ax.set_xlim(step - step * 0.7, 1.0 + step * 0.7)
     ax.set_ylim(0, y_max * 1.14)
-    ax.yaxis.grid(True, linestyle="--", alpha=0.45, zorder=0)
-    ax.set_axisbelow(True)
+    ax.grid(False)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
 
     if legend_entries:
         ax.legend(fontsize=9, loc="upper right", framealpha=0.85)

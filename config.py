@@ -112,6 +112,11 @@ MIN_PREVALENCE_PCA     = 4/12  # e.g. 0.5 = detected in >= 50% of all samples
 MIN_PREVALENCE_HCA     = 4/12  # set > 0 to drop sparse features from the heatmap
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
+PREVALENCE_HISTOGRAM_SHOW_THRESHOLDS = False
+# True  - draw vertical reference lines for PCA and HCA prevalence thresholds
+#         (and Volcano if > 0) in the prevalence histogram.
+# False - omit all threshold lines for a cleaner plot.
+
 # --- Blank correction (blank_correction.py) -----------------------------------
 FOLD_CHANGE_THRESHOLD = 10.0
 # A feature is removed if:
