@@ -537,6 +537,11 @@ def run(cfg=config):
             enriched = pd.read_csv(enriched_path, index_col="feature_id")
             if "molecular_formula" in enriched.columns:
                 formula_map = enriched["molecular_formula"].dropna().to_dict()
+        else:
+            print("  [warning] feature_metadata_enriched.csv not found; "
+                  "BLANK_EXCLUDE_KEYWORDS will match compound names only "
+                  "(molecular formula matching disabled). Run compound_classification "
+                  "before blank_correction to enable formula matching.")
 
         kw_removed = []
         for fid in list(corrected.index):

@@ -268,9 +268,9 @@ def run(cfg=None, data_dir=None, output_dir=None, n_features=None):
         mean_rt = metadata_df.loc[feature_id, "mean_rt"]
         pc_vals = {c: loadings_df.loc[feature_id, c] for c in pc_cols}
 
-        # Find compound name
-        compound_name = find_compound_name(mean_rt, peak_matrix, feature_id, data_dir)
-        if compound_name is None:
+        # Use compound name from feature_metadata (same as data_import.py best-peak logic)
+        compound_name = metadata_df.loc[feature_id, "compound_name"]
+        if not compound_name or pd.isna(compound_name):
             compound_name = f"Unknown (RT {mean_rt:.4f})"
 
         # Get areas for each sample
@@ -302,13 +302,18 @@ def run(cfg=None, data_dir=None, output_dir=None, n_features=None):
             ly_v = loadings_df.loc[fid, col_y]
             score_map[fid] = float(np.sqrt(lx_v**2 + ly_v**2))
 
-    output_df['_sort_score'] = output_df['feature_id'].map(score_map)
+    score_col = "separation_score" if sep_scores is not None else "loading_distance"
+    output_df[score_col] = output_df['feature_id'].map(score_map)
 
     # Sort by score (descending) then by area (descending)
-    output_df = output_df.sort_values(["_sort_score", "area"], ascending=[False, False])
+    output_df = output_df.sort_values([score_col, "area"], ascending=[False, False])
 
-    # Drop the helper column
-    output_df = output_df.drop(columns=['_sort_score'])
+    # Move score column to appear right after RT for readability
+    cols = output_df.columns.tolist()
+    cols.remove(score_col)
+    rt_pos = cols.index("RT") + 1
+    cols.insert(rt_pos, score_col)
+    output_df = output_df[cols]
     
     # Write output
     output_file = os.path.join(output_dir, "top_features_analysis.csv")

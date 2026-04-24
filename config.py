@@ -6,6 +6,7 @@ All scripts import their parameters from here.
 """
 
 import math
+import os as _os
 from COMPREHENSIVE_CLASS_COLORS import COMPREHENSIVE_CLASS_COLORS
 
 # --- File paths ---------------------------------------------------------------
@@ -111,8 +112,13 @@ MIN_PREVALENCE_PCA     = 4/12  # e.g. 0.5 = detected in >= 50% of all samples
 MIN_PREVALENCE_HCA     = 4/12  # set > 0 to drop sparse features from the heatmap
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
+PREVALENCE_HISTOGRAM_SHOW_THRESHOLDS = False
+# True  - draw vertical reference lines for PCA and HCA prevalence thresholds
+#         (and Volcano if > 0) in the prevalence histogram.
+# False - omit all threshold lines for a cleaner plot.
+
 # --- Blank correction (blank_correction.py) -----------------------------------
-FOLD_CHANGE_THRESHOLD = 3.0
+FOLD_CHANGE_THRESHOLD = 10.0
 # A feature is removed if:
 #   mean(sample areas) / max(blank area)  <  FOLD_CHANGE_THRESHOLD
 # Features absent from blanks are always retained.
@@ -147,7 +153,7 @@ BLANK_EXCLUDE_KEYWORDS = ["silan", "Silan", "siloxane", "Siloxane", "chloro", "C
 # substrings (case-insensitive) are removed after blank correction.
 # Useful for stripping known instrument/column contaminants by name or element.
 # Examples:
-#   BLANK_EXCLUDE_KEYWORDS = ["silan", "Si"]   # removes siloxanes / Si-containing compounds
+#   BLANK_EXCLUDE_KEYWORDS = ["silan"]   # removes siloxanes / Si-containing compounds
 #   BLANK_EXCLUDE_KEYWORDS = ["column", "phthalate"]
 
 # --- Normalization, log transform, and scaling --------------------------------
@@ -302,7 +308,7 @@ HCA_CMAP              = "vlag"       # diverging colormap suited to mean-centred
 HCA_MAX_FEATURE_LABELS = 50          # label the feature axis when n_features <= this value;
                                      # set to 0 to always hide feature labels
 
-RUN_HCA_DENDROGRAM = True
+RUN_HCA_DENDROGRAM = False
 # Set to False to skip the interactive HTML dendrogram (Step 5b) in pipeline.py.
 # Produces hca_dendrogram.html — no server needed, opens in any browser.
 
@@ -529,7 +535,9 @@ NPCLASSIFIER_RATE_LIMIT_DELAY = 3
 # Seconds to sleep before each NPClassifier API request (npclassifier.gnps2.org).
 # No stated rate limit; 1.0 s is conservative and well-mannered.
 
-PUBCHEM_CACHE_FILE = "output/pubchem_cache.json"
+PUBCHEM_CACHE_FILE = _os.path.join(
+    _os.path.dirname(_os.path.abspath(__file__)), "output", "pubchem_cache.json"
+)
 # Path to the local JSON cache for API responses.
 # The cache stores: compound name -> CID, CID -> properties,
 #                   CID -> SMILES + InChIKey, CID -> ClassyFire taxonomy,

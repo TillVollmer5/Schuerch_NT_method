@@ -54,9 +54,10 @@ def run(cfg=config):
 
     # Reference compounds for class=1 assignment
     # feature_id format: "{mean_mz:.4f}_{mean_rt:.4f}"
-    ref_path = os.path.join("DATA", "references", "references.csv")
-    farn_path = os.path.join("DATA", "references", "farn1-46.csv")
-    ref_df = pd.read_csv(ref_path)
+    _here     = os.path.dirname(os.path.abspath(__file__))
+    ref_path  = os.path.join(_here, "DATA", "references", "references.csv")
+    farn_path = os.path.join(_here, "DATA", "references", "farn1-46.csv")
+    ref_df  = pd.read_csv(ref_path)
     farn_df = pd.read_csv(farn_path)
     ref_rts   = ref_df["Retention Time"].values.astype(float)
     ref_mzs   = ref_df["Reference m/z"].values.astype(float)
@@ -139,6 +140,18 @@ def run(cfg=config):
     out = pd.DataFrame(rows, columns=col_order)
     out.to_csv(out_path, index=False)
     print(f"[classification] Wrote {len(rows)} features to {out_path}")
+
+    # --- Add class column to top_features_analysis.csv -------------------------
+    top_features_path = os.path.join(cfg.OUTPUT_DIR, "top_features_analysis.csv")
+    if os.path.exists(top_features_path):
+        top_df = pd.read_csv(top_features_path)
+        # Create mapping from feature_id to class
+        class_map = {row["feature_id"]: row["class"] for _, row in out.iterrows()}
+        # Add class column
+        top_df["class"] = top_df["feature_id"].map(class_map)
+        # Write back
+        top_df.to_csv(top_features_path, index=False)
+        print(f"[classification] Added 'class' column to {top_features_path}")
 
 
 if __name__ == "__main__":

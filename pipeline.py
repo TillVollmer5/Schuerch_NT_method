@@ -17,6 +17,7 @@ Runs all processing steps in sequence:
   Step 6   volcano.py                  -> output/plots/volcano_*.png + results tables
   Step 7   top_features_analysis.py    -> output/top_features_analysis.csv
   Step 7b  targeted_boxplots.py        -> output/plots/targeted_boxplots.png (optional)
+  Step 7c  second_targeted_boxplots.py -> output/plots/second_targeted_boxplots/*.png (optional)
   Step 8   blank_contaminants_report.py -> output/blank_contaminants_report.csv
   Step 9   classification.py            -> output/classification.csv
 
@@ -37,7 +38,8 @@ To run individual steps:
     python hca.py
     python hca_dendrogram.py            # optional; respects RUN_HCA_DENDROGRAM
     python volcano.py
-    python targeted_boxplots.py         # optional; respects RUN_TARGETED_BOXPLOTS
+    python targeted_boxplots.py          # optional; respects RUN_TARGETED_BOXPLOTS
+    python second_targeted_boxplots.py   # optional; respects RUN_SECOND_TARGETED_BOXPLOTS
 """
 
 import os
@@ -80,6 +82,7 @@ import hca_dendrogram as hca_dendrogram_step
 import volcano as volcano_step
 import top_features_analysis as top_features_analysis_step
 import targeted_boxplots as targeted_boxplots_step
+import second_targeted_boxplots as second_targeted_boxplots_step
 import blank_contaminants_report as blank_contaminants_report_step
 import classification as classification_step
 
@@ -114,13 +117,16 @@ def main():
 
     data_import.run(config)
     print()
+    # compound_classification runs here (before blank_correction) so that
+    # feature_metadata_enriched.csv is available for molecular-formula keyword
+    # filtering in blank_correction (BLANK_EXCLUDE_KEYWORDS).
+    if getattr(config, "RUN_COMPOUND_CLASSIFICATION", False):
+        compound_classification_step.run(config)
+        print()
     blank_correction.run(config)
     print()
     prevalence_histogram_step.run(config)
     print()
-    if getattr(config, "RUN_COMPOUND_CLASSIFICATION", False):
-        compound_classification_step.run(config)
-        print()
     if getattr(config, "RUN_CLASS_PLOTS", False):
         compound_class_plots_step.run(config)
         print()
@@ -139,6 +145,9 @@ def main():
     print()
     if getattr(config, "RUN_TARGETED_BOXPLOTS", True):
         targeted_boxplots_step.run(config)
+        print()
+    if getattr(config, "RUN_SECOND_TARGETED_BOXPLOTS", True):
+        second_targeted_boxplots_step.run(config)
         print()
     blank_contaminants_report_step.run(config)
     print()

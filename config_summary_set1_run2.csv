@@ -1,0 +1,75 @@
+variable,value
+DATA_DIR,DATA
+OUTPUT_DIR,output
+BLANK_PREFIX,Blank
+SAMPLE_GROUPS,"[""S-R"", ""S-R""), (""S"", ""S"")]"
+RT_MARGIN,0.05
+USE_MZ,True
+MZ_TOLERANCE,0.001
+ALIGN_RT,True
+MZ_ALIGN_TOLERANCE,0.1
+VALUE_COL,Area
+EXCLUSION_LIST,[]
+EXCLUSION_RT_MARGIN,0.05
+EXCLUSION_MZ_TOLERANCE,0.001
+MIN_PREVALENCE_PCA,0.35
+MIN_PREVALENCE_HCA,0.45
+MIN_PREVALENCE_VOLCANO,0.0
+FOLD_CHANGE_THRESHOLD,3.0
+BLANK_USE_MZ,True
+BLANK_MZ_TOLERANCE,0.001
+BLANK_SAMPLE_MODE,per_sample
+BLANK_REFERENCE_MODE,max
+BLANK_EXCLUDE_KEYWORDS,silan; Silan; Si; siloxane; Siloxane
+NORMALIZATION,pqn
+LOG_BASE,2
+SCALING,pareto
+NORMALIZATION_PCA,None
+NORMALIZATION_HCA,None
+NORMALIZATION_VOLCANO,None
+NORMALIZATION_BOXPLOT,none
+LOG_BASE_PCA,None
+LOG_BASE_HCA,None
+LOG_BASE_VOLCANO,None
+LOG_BASE_BOXPLOT,none
+SCALING_PCA,None
+SCALING_HCA,None
+SCALING_VOLCANO,none
+SCALING_BOXPLOT,none
+TARGETED_LIST,"[[5.997,41.0384,""Z-3-Hexenal""],[7.735,83.0492,""E-2-Hexenal""],[7.801,67.0542,""Z-3-Hexenol""],[8.958,104.0621,""Styrene""],[12.88,67.0542,""Z-3-Hexenol acetate""],[13.205,67.0542,""E-2-Hexenol acetate""],[13.522,119.0856,""Cymene""],[13.665,41.0384,""Limonene""],[15.93,93.0699,""Linalool""],[16.375,41.0384,""DMNT""],[21.529,117.0573,""Indole""],[25.049,91.0542,""(-)-(E)-Caryophyllene""],[28.763,81.0699,""TMTT""]]"
+TARGETED_BOXPLOT_ROWS,3
+RUN_TARGETED_BOXPLOTS,True
+STAT_TEST_BOXPLOT,mannwhitney
+VOLCANO_COMPARISONS,all
+VOLCANO_FC_THRESHOLD,1.0
+VOLCANO_P_THRESHOLD,0.05
+VOLCANO_TOP_LABELS,30
+STAT_TEST_VOLCANO,mannwhitney
+HCA_LINKAGE,ward
+HCA_METRIC,euclidean
+HCA_CMAP,vlag
+HCA_MAX_FEATURE_LABELS,50
+RUN_HCA_DENDROGRAM,True
+HCA_CLASS_ANNOTATION_COLUMNS,"superclass; npclassifier_pathway"
+COMPOUND_NAME_COL,Component Name
+FEATURE_LABEL,id
+N_COMPONENTS,2
+PCA_PLOT_X,1
+PCA_PLOT_Y,2
+PCA_ELLIPSE,True
+PCA_TOP_LOADINGS,10
+PCA_BAR_TOP,10
+RUN_CLASS_PLOTS,True
+CLASS_PIE_COLUMNS,"superclass; npclassifier_pathway; npclassifier_superclass; subclass"
+CLASS_PIE_GROUPS,separate
+CLASS_PIE_MIN_FRACTION,0.02
+CLASS_PIE_DETECTED_ONLY,True
+CLASS_HIGHLIGHT,"[{""column"": ""npclassifier_pathway"", ""value"": ""Terpenoids"", ""color"": ""#edaf29""}, {""column"": ""subclass"", ""value"": ""Sesquiterpenoids"", ""color"": ""#2ecc71""}, {""column"": ""subclass"", ""value"": ""Monoterpenoids"", ""color"": ""#3498db""}, {""column"": ""subclass"", ""value"": ""Diterpenoids"", ""color"": ""#9b59b6""}, {""column"": ""subclass"", ""value"": ""Triterpenoids"", ""color"": ""#e67e22""}, {""column"": ""subclass"", ""value"": ""Fatty acids and conjugates"", ""color"": ""#1abc9c""}, {""column"": ""subclass"", ""value"": ""Fatty alcohols"", ""color"": ""#16a085""}, {""column"": ""subclass"", ""value"": ""Fatty acid esters"", ""color"": ""#27ae60""}, {""column"": ""subclass"", ""value"": ""Oxanes"", ""color"": ""#c0392b""}]"
+CLASS_LABEL_COLUMN,subclass
+RUN_COMPOUND_CLASSIFICATION,True
+PUBCHEM_CACHE_ONLY,True
+PUBCHEM_USER_AGENT,"Schuerch_NT_pipeline/1.0 (nontargeted GCMS metabolomics; contact: till.vollmer@unibe.ch)"
+PUBCHEM_RATE_LIMIT_DELAY,1
+CLASSYFIRE_RATE_LIMIT_DELAY,3
+NPCLASSIFIER_RATE_LIMIT_DELAY,3
+PUBCHEM_CACHE_FILE,output/pubchem_cache.json

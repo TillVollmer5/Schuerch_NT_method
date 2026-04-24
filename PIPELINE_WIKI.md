@@ -61,6 +61,7 @@ and the final plots.
    - 9b.1 [Compound matching](#9b1-compound-matching)
    - 9b.2 [Normalization](#9b2-normalization)
    - 9b.3 [Statistical test](#9b3-statistical-test) — `mannwhitney`, `ttest`, `wilcoxon`, `spearman`, `pearson`, `kruskal`, `anova`
+9c. [Step 7c — Second targeted boxplots](#9c-step-7c--second-targeted-boxplots)
 10. [Report — Blank contaminants](#10-report--blank-contaminants)
 11. [Report — Top PCA features](#11-report--top-pca-features)
 12. [Step 9 — Feature classification](#12-step-9--feature-classification)
@@ -147,6 +148,9 @@ Step 3  normalization.py
         |
         v
 Step 7  top_features_analysis.py
+        |
+        +--------> Step 7c second_targeted_boxplots.py -> one PNG per feature_id
+                   (reads top_features_analysis.csv, groups S vs S-R)
         - reads pca_loadings.csv, peak_matrix_raw.csv, feature_metadata.csv,
           and raw TraceFinder CSVs
         - extracts top N features by group-separation score
@@ -1678,6 +1682,30 @@ Significance is displayed using the standard star convention:
 `****` (p < 0.0001). Note: p-values shown in boxplots are **not** BH-corrected
 (single-compound comparison); the volcano plot should be used for multiple-testing-
 corrected results across all features.
+
+---
+
+## 9c. Step 7c — Second targeted boxplots
+
+**Script:** `second_targeted_boxplots.py`
+**Config:** `RUN_SECOND_TARGETED_BOXPLOTS` (default `True`)
+**Input:** `top_features_analysis.csv`
+**Output:** `plots/second_targeted_boxplots/<feature_id>.png` — one file per feature
+
+Reads the output of `top_features_analysis.py` and generates one individual
+boxplot PNG per `feature_id`, comparing groups **S** and **S-R** as defined by
+the `sample` column (samples starting with `"S-R"` → group S-R; samples
+starting with `"S"` → group S).
+
+The plot title shows the `feature_id` and `compound_name`. A Mann-Whitney U
+significance annotation (`ns` / `*` / `**` / `***` / `****`) is added below the
+title. Y-axis shows raw peak area values.
+
+To disable this step without removing it from the pipeline, set in `config.py`:
+
+```python
+RUN_SECOND_TARGETED_BOXPLOTS = False
+```
 
 ---
 
