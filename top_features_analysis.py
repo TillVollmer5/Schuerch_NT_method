@@ -273,6 +273,19 @@ def run(cfg=None, data_dir=None, output_dir=None, n_features=None):
         if not compound_name or pd.isna(compound_name):
             compound_name = f"Unknown (RT {mean_rt:.4f})"
 
+        def _meta(col):
+            val = metadata_df.loc[feature_id, col] if col in metadata_df.columns else None
+            return None if pd.isna(val) else val
+
+        score_vals = {
+            "SI":          _meta("si_highest_score"),
+            "RSI":         _meta("rsi_highest_score"),
+            "HRF Score":   _meta("hrf_highest_score"),
+            "RHRF Score":  _meta("rhrf_highest_score"),
+            "Total Score": _meta("total_score_highest_score"),
+            "Delta RI":    _meta("delta_ri_highest_score"),
+        }
+
         # Get areas for each sample
         if feature_id in peak_matrix.index:
             areas = peak_matrix.loc[feature_id]
@@ -286,6 +299,7 @@ def run(cfg=None, data_dir=None, output_dir=None, n_features=None):
                         "RT":            mean_rt,
                         "area":          area,
                         "sample":        sample_name,
+                        **score_vals,
                         **pc_vals,
                     })
     
