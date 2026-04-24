@@ -12,3 +12,6 @@ DATA/*.csv
 
 # macOS
 .DS_Store
+
+# LLMs
+.claude
