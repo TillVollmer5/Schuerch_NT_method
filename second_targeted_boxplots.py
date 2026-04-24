@@ -151,7 +151,7 @@ def run(cfg=_config_module):
                 ax.scatter(x, vals, color=GROUP_COLORS[g], edgecolors="black",
                            linewidths=0.5, s=18, zorder=3, alpha=0.85)
 
-        # y-axis padding
+        # y-axis padding + significance bracket
         non_empty = [v for v in group_data if len(v) > 0]
         if not non_empty:
             continue
@@ -159,12 +159,24 @@ def run(cfg=_config_module):
         if len(all_vals) > 0 and not np.all(np.isnan(all_vals)):
             lo, hi = np.nanmin(all_vals), np.nanmax(all_vals)
             pad = (hi - lo) * 0.15 if hi > lo else abs(hi) * 0.1 + 0.1
-            ax.set_ylim(lo - pad, hi + pad)
+            ax.set_ylim(lo - pad, hi + pad * 3.5)
 
-        ax.set_title(f"{title}\n{p_str}", fontsize=8, pad=3)
+            # Prism-style significance bracket
+            if p_str and p_str not in ("ns", "?"):
+                bk_y   = hi + pad * 1.5
+                tick_h = pad * 0.6
+                ax.plot([1, 2], [bk_y, bk_y], color="black", linewidth=0.8)
+                ax.plot([1, 1], [bk_y - tick_h, bk_y], color="black", linewidth=0.8)
+                ax.plot([2, 2], [bk_y - tick_h, bk_y], color="black", linewidth=0.8)
+                ax.text(1.5, bk_y + tick_h * 0.15, p_str,
+                        ha="center", va="bottom", fontsize=9)
+
+        ax.set_title(title, fontsize=8, pad=3)
         ax.tick_params(axis="x", labelsize=7)
         ax.tick_params(axis="y", labelsize=7)
-        ax.grid(True, alpha=0.3, axis="y", linewidth=0.5)
+        ax.grid(False)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
 
     fig.supylabel("peak area (raw)", fontsize=9)
     plt.tight_layout()
