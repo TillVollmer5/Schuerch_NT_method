@@ -357,7 +357,7 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
     highlight_map   = highlight_map   or {}
     class_label_map = class_label_map or {}
 
-    fig, ax = plt.subplots(figsize=(8.5, 5))
+    fig, ax = plt.subplots(figsize=(10, 5))
 
     # draw background (non-highlighted) dots
     # split into highlighted and non-highlighted for correct z-ordering
@@ -371,47 +371,54 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
         ax.scatter(lx[i], ly[i], color=highlight_map[ids[i]], s=28,
                    alpha=0.85, zorder=4, edgecolors="none")
 
-    # build legend entries for highlighted classes
-    if highlight_map:
-        from matplotlib.lines import Line2D
-        seen = {}
-        for fid, col in highlight_map.items():
-            # use the class value as legend label if available
-            lbl = class_label_map.get(fid, fid)
-            # group by color
-            seen.setdefault(col, lbl)
-        handles = [Line2D([], [], marker="o", color="w",
-                          markerfacecolor=col, markersize=7, label=lbl)
-                   for col, lbl in seen.items()]
-        ax.legend(handles=handles, fontsize=7.5, framealpha=0.9,
-                  title="Highlighted", title_fontsize=8,
-                  loc="upper left", bbox_to_anchor=(1.02, 1),
-                  borderaxespad=0)
-
+   ## build legend entries for highlighted classes
+   #if highlight_map:
+   #    from matplotlib.lines import Line2D
+   #    seen = {}
+   #    for fid, col in highlight_map.items():
+   #        # use the class value as legend label if available
+   #        lbl = class_label_map.get(fid, fid)
+   #        # group by color
+   #        seen.setdefault(col, lbl)
+   #    handles = [Line2D([], [], marker="o", color="w",
+   #                      markerfacecolor=col, markersize=7, label=lbl)
+   #               for col, lbl in seen.items()]
+   #    ax.legend(handles=handles, fontsize=7.5, framealpha=0.9,
+   #              title="Highlighted", title_fontsize=8,
+   #              loc="upper left", bbox_to_anchor=(1.02, 1),
+   #              borderaxespad=0)
+        
     # label top features by group-separation score (or Euclidean fallback)
     if top_n > 0:
         dist    = sep_scores if sep_scores is not None else np.sqrt(lx ** 2 + ly ** 2)
         top_idx = np.argsort(dist)[-top_n:]
-        ax.scatter(lx[top_idx], ly[top_idx], color="#111111",
-                   s=28, zorder=4, edgecolors="none")
+        top_colors = [highlight_map.get(ids[i], "#555555") for i in top_idx]
+        ax.scatter(lx[top_idx], ly[top_idx], color=top_colors,
+                   s=38, zorder=5, edgecolors="#111111", linewidths=0.9)
 
         # sort top features bottom-to-top by y so label order matches point order
         top_idx = top_idx[np.argsort(ly[top_idx])]
 
         xlim  = ax.get_xlim()
-        x_off = (xlim[1] - xlim[0]) * 0.05   # small right offset in data coords
+        x_off = (xlim[1] - xlim[0]) * 0.25   # small offset in data coords
 
-        # place all labels at the same y as their point, shifted right
+        # place labels right of point when x >= 0, left of point when x < 0
         texts = []
         for i in top_idx:
             fid   = loadings_df.index[i]
             label = str(fid)
             if fid in class_label_map:
                 label = f"{label} [{class_label_map[fid]}]"
-            t = ax.text(lx[i] + x_off, ly[i], label,
-                        fontsize=6.5, color="#111111", zorder=5,
-                        va="center", ha="left")
-            texts.append((t, lx[i], ly[i]))
+            color = highlight_map.get(fid, "#555555")
+            if lx[i] >= 0:
+                t = ax.text(lx[i] + x_off, ly[i], label,
+                            fontsize=6.5, color="#111111", zorder=5,
+                            va="center", ha="left")
+            else:
+                t = ax.text(lx[i] - x_off, ly[i], label,
+                            fontsize=6.5, color="#111111", zorder=5,
+                            va="center", ha="right")
+            texts.append((t, lx[i], ly[i], color))
 
         # render once to measure real text heights in data coordinates
         fig.canvas.draw()
@@ -419,11 +426,13 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
         inv      = ax.transData.inverted()
 
         items = []
-        for t, px, py in texts:
-            bb      = t.get_window_extent(renderer=renderer)
-            corners = inv.transform([[bb.x0, bb.y0], [bb.x1, bb.y1]])
-            h       = abs(corners[1, 1] - corners[0, 1])
-            items.append({"t": t, "px": px, "py": py, "ty": py, "h": h})
+        for t, px, py, color in texts:
+            bb         = t.get_window_extent(renderer=renderer)
+            corners    = inv.transform([[bb.x0, bb.y0], [bb.x1, bb.y1]])
+            h          = abs(corners[1, 1] - corners[0, 1])
+            right_side = (px >= 0)
+            items.append({"t": t, "px": px, "py": py, "ty": py, "h": h,
+                          "right_side": right_side, "color": color})
 
         # sort bottom-to-top, then push overlapping labels upward
         items.sort(key=lambda d: d["ty"])
@@ -437,29 +446,33 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
             x_cur, _ = d["t"].get_position()
             d["t"].set_position((x_cur, d["ty"]))
 
-                # check for right-edge overflow and flip those labels to the left
+        # expand plot limits so all labels fit without flipping
         fig.canvas.draw()
-        ax_right_px = ax.transData.transform((ax.get_xlim()[1], 0))[0]
+        new_xmin, new_xmax = ax.get_xlim()
+        new_ymin, new_ymax = ax.get_ylim()
         for d in items:
             bb = d["t"].get_window_extent(renderer=renderer)
-            if bb.x1 > ax_right_px:
-                d["t"].set_ha("right")
-                _, y_cur = d["t"].get_position()
-                d["t"].set_position((d["px"] - x_off, y_cur))
-                d["flipped"] = True
-            else:
-                d["flipped"] = False
+            corners = inv.transform([[bb.x0, bb.y0], [bb.x1, bb.y1]])
+            new_xmin = min(new_xmin, corners[0, 0])
+            new_xmax = max(new_xmax, corners[1, 0])
+            new_ymin = min(new_ymin, corners[0, 1])
+            new_ymax = max(new_ymax, corners[1, 1])
+        margin_x = (new_xmax - new_xmin) * 0.03
+        margin_y = (new_ymax - new_ymin) * 0.03
+        ax.set_xlim(new_xmin - margin_x, new_xmax + margin_x)
+        ax.set_ylim(new_ymin - margin_y, new_ymax + margin_y)
 
         # draw connector line from point to nearest edge of label bbox
         fig.canvas.draw()
+        inv = ax.transData.inverted()   # refresh after axis limits changed
         for d in items:
             bb = d["t"].get_window_extent(renderer=renderer)
-            if d["flipped"]:
-                lx_l, ly_l = inv.transform((bb.x1, (bb.y0 + bb.y1) / 2))
-            else:
+            if d["right_side"]:
                 lx_l, ly_l = inv.transform((bb.x0, (bb.y0 + bb.y1) / 2))
+            else:
+                lx_l, ly_l = inv.transform((bb.x1, (bb.y0 + bb.y1) / 2))
             ax.plot([d["px"], lx_l], [d["py"], ly_l],
-                    color="#aaaaaa", lw=0.5, zorder=3)
+                    color=d["color"], lw=0.5, zorder=3)
 
     ax.axhline(0, color="#cccccc", linewidth=0.8, zorder=1)
     ax.axvline(0, color="#cccccc", linewidth=0.8, zorder=1)
