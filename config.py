@@ -65,11 +65,11 @@ EXCLUSION_LIST = [
 [12.88,  67.0542, "Z-3-Hexenol acetate"],
 [13.205, 67.0542, "E-2-Hexenol acetate"],
 [13.522,119.0856, "Cymene"],
-[13.665, 41.0384, "Limonene"],
+[13.665, 41.0384, "Limonene D"],
 [15.93,  93.0699, "Linalool"],
 [16.375, 41.0384, "DMNT"],
 [21.529, 117.0573, "Indole"],
-[25.049, 91.0542, "(-)-(E)-Caryophyllene"],
+[25.049, 91.0542, "E-beta-Caryophyllene"],
 [28.763, 81.0699, "TMTT"],
 #[5.997, 41.0384, "Z-3-Hexenal"],#3-Hexenal
 #[7.735, 83.0492, "E-2-Hexenal"],#2-Hexenal, (E)- E/Z based on literature
