@@ -350,7 +350,7 @@ def detect_features(peaks, rt_margin, use_mz=False, mz_tolerance=0.005):
     for cl in rt_clusters:
         mean_rt = sum(p["rt"]  for p in cl) / len(cl)
         mean_mz = sum(p["mz"]  for p in cl) / len(cl)
-        fid     = f"{mean_mz:.4f}_{mean_rt:.4f}" if use_mz else f"RT_{mean_rt:.4f}"
+        fid     = f"{mean_mz:.5f}_{mean_rt:.4f}" if use_mz else f"RT_{mean_rt:.4f}"
 
         # one peak per sample (guaranteed by conflict resolution)
         sample_areas = {p["sample"]: p["area"] for p in cl}
@@ -650,7 +650,9 @@ def run(cfg=config):
                 col_vals.append("not detected")
             else:
                 sname = sample_names_map[s]
-                if sname == name_map.at[fid, "compound_name"]:
+                compound = name_map.loc[fid, "compound_name"]
+                compound = compound.iloc[0] if hasattr(compound, "iloc") else compound
+                if sname == compound:
                     col_vals.append("same")
                 else:
                     col_vals.append(sname)
