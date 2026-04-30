@@ -108,7 +108,7 @@ EXCLUSION_MZ_TOLERANCE = MZ_TOLERANCE   # +- Da around each listed m/z based on 
 #        group but NONE of the other is the most biologically interesting result.
 #        Filtering by overall prevalence would remove exactly those features.
 
-MIN_PREVALENCE_PCA     = 4/12  # e.g. 0.5 = detected in >= 50% of all samples
+MIN_PREVALENCE_PCA     = 12/12  # e.g. 0.5 = detected in >= 50% of all samples
 MIN_PREVALENCE_HCA     = 4/12  # set > 0 to drop sparse features from the heatmap
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
@@ -238,11 +238,11 @@ TARGETED_LIST = [
 [12.88,  67.0542, "Z-3-Hexenol acetate"],
 [13.205, 67.0542, "E-2-Hexenol acetate"],
 [13.522,119.0856, "Cymene"],
-[13.665, 41.0384, "Limonene"],
+[13.665, 41.0384, "Limonene D"],
 [15.93,  93.0699, "Linalool"],
 [16.375, 41.0384, "DMNT"],
 [21.529, 117.0573, "Indole"],
-[25.049, 91.0542, "(-)-(E)-Caryophyllene"],
+[25.049, 91.0542, "E-beta-Caryophyllene"],
 [28.763, 81.0699, "TMTT"],
 ]
 

@@ -391,7 +391,7 @@ def plot_loadings(loadings_df, variance_df, pc_x, pc_y,
     # label top features by group-separation score (or Euclidean fallback)
     if top_n > 0:
         dist    = sep_scores if sep_scores is not None else np.sqrt(lx ** 2 + ly ** 2)
-        top_idx = np.argsort(dist)[-top_n:]
+        top_idx = np.argsort(dist, kind='stable')[-top_n:]
         top_colors = [highlight_map.get(ids[i], "#555555") for i in top_idx]
         ax.scatter(lx[top_idx], ly[top_idx], color=top_colors,
                    s=38, zorder=5, edgecolors="#111111", linewidths=0.9)
@@ -531,8 +531,8 @@ def plot_loadings_bar(loadings_df, variance_df, pc_x, pc_y,
 
     # select top_n by separation score (or Euclidean fallback), then sort by PC_x loading for display
     top_n    = min(top_n, len(loadings_df))
-    top_idx  = np.argsort(dist)[-top_n:]
-    top_idx  = top_idx[np.argsort(lx[top_idx])]   # sort ascending by PC_x
+    top_idx  = np.argsort(dist, kind='stable')[-top_n:]
+    top_idx  = top_idx[np.argsort(lx[top_idx], kind='stable')]   # sort ascending by PC_x
 
     feat_ids    = [loadings_df.index[i] for i in top_idx]
     feat_labels = []
@@ -758,7 +758,7 @@ def plot_loadings_3d(loadings_df, variance_df, output_path, top_n=10,
     ids = loadings_df.index.tolist()
 
     dist    = sep_scores if sep_scores is not None else np.sqrt(lx ** 2 + ly ** 2 + lz ** 2)
-    top_idx = set(np.argsort(dist)[-top_n:]) if top_n > 0 else set()
+    top_idx = set(np.argsort(dist, kind='stable')[-top_n:]) if top_n > 0 else set()
     bg_idx  = [i for i in range(len(ids)) if i not in top_idx]
     hi_idx  = list(top_idx)
 

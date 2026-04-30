@@ -146,17 +146,15 @@ def get_top_features(loadings_df, feature_metadata_df, n_features=10,
         Top N features sorted by selection criterion (descending).
     """
     if sep_scores is not None:
-        loadings_df = loadings_df.copy()
-        loadings_df['_score'] = sep_scores
+        scores = sep_scores
     else:
         lx = loadings_df[col_x].values
         ly = loadings_df[col_y].values
-        loadings_df = loadings_df.copy()
-        loadings_df['_score'] = np.sqrt(lx ** 2 + ly ** 2)
+        scores = np.sqrt(lx ** 2 + ly ** 2)
 
-    top = loadings_df.nlargest(n_features, '_score')
-    top = top.drop(columns=['_score'])
-    return top
+    n_features = min(n_features, len(loadings_df))
+    top_idx = np.argsort(scores, kind='stable')[-n_features:]
+    return loadings_df.iloc[top_idx]
 
 
 def run(cfg=None, data_dir=None, output_dir=None, n_features=None):
