@@ -5,6 +5,7 @@ Runs all processing steps in sequence:
 
   Step 1   data_import.py              -> output/peak_matrix_raw.csv
   Step 2   blank_correction.py         -> output/peak_matrix_blank_corrected.csv
+  Step 2a  sample_scaling.py           -> output/peak_matrix_blank_corrected.csv (rescaled, optional)
   Step 2b  prevalence_histogram.py     -> output/plots/prevalence_histogram.png
   Step 2c  compound_classification.py  -> output/compound_classes.csv (optional)
   Step 2d  compound_class_plots.py     -> output/plots/class_pie_*.png (optional)
@@ -30,6 +31,7 @@ Usage:
 To run individual steps:
     python data_import.py
     python blank_correction.py
+    python sample_scaling.py             # optional; respects ENABLE_SAMPLE_SCALING
     python prevalence_histogram.py
     python compound_classification.py   # optional; respects RUN_COMPOUND_CLASSIFICATION
     python compound_class_plots.py      # optional; respects RUN_CLASS_PLOTS
@@ -72,6 +74,7 @@ class _Tee:
 import config
 import data_import
 import blank_correction
+import sample_scaling
 import prevalence_histogram as prevalence_histogram_step
 import compound_classification as compound_classification_step
 import compound_class_plots as compound_class_plots_step
@@ -109,6 +112,7 @@ def main():
     print(f"  RT margin    : {config.RT_MARGIN} min")
     print(f"  use m/z      : {config.USE_MZ}")
     print(f"  fold change  : {config.FOLD_CHANGE_THRESHOLD}x")
+    print(f"  sample scale : {'enabled' if getattr(config, 'ENABLE_SAMPLE_SCALING', False) else 'disabled'}")
     print(f"  normalization: {config.NORMALIZATION}  (PCA/HCA/Volcano overrides in config)")
     print(f"  log base     : {config.LOG_BASE}")
     print(f"  scaling      : {config.SCALING}")
@@ -124,6 +128,8 @@ def main():
         compound_classification_step.run(config)
         print()
     blank_correction.run(config)
+    print()
+    sample_scaling.run(config)
     print()
     prevalence_histogram_step.run(config)
     print()

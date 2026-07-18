@@ -45,6 +45,8 @@ Audit log files written (when applicable):
   features_removed_zero_variance.csv   - zero-variance features dropped by scaling
 
 Input  : output/peak_matrix_blank_corrected.csv
+         (already includes the per-sample volume/concentration correction
+         from sample_scaling.py when ENABLE_SAMPLE_SCALING = True)
          output/feature_metadata.csv
 Output : output/peak_matrix_processed_pca.csv
          output/peak_matrix_processed_hca.csv

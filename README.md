@@ -9,6 +9,7 @@ data exported from **Thermo TraceFinder** (Orbitrap MS).
 |------|--------|----------------|
 | 1 | `data_import.py` | TraceFinder CSVs → `peak_matrix_raw.csv` |
 | 2 | `blank_correction.py` | raw matrix → `peak_matrix_blank_corrected.csv` |
+| 2a | `sample_scaling.py` | blank-corrected → rescaled by known per-sample volume/concentration *(optional; `ENABLE_SAMPLE_SCALING`)* |
 | 2b | `prevalence_histogram.py` | blank-corrected → `prevalence_histogram.png` + `prevalence_summary.csv` |
 | 2c | `compound_classification.py` | `feature_metadata.csv` → `compound_classes.csv` + `feature_metadata_enriched.csv` *(optional; `RUN_COMPOUND_CLASSIFICATION`)* |
 | 2d | `compound_class_plots.py` | `feature_metadata_enriched.csv` → `class_pie_*.png` *(optional; `RUN_CLASS_PLOTS`)* |
@@ -50,6 +51,18 @@ with settings appropriate for its downstream analysis:
 | `peak_matrix_processed_volcano.csv` | Volcano plot | full feature set; `NORMALIZATION_VOLCANO`, `LOG_BASE_VOLCANO`; scaling always `"none"` |
 
 Per-analysis overrides default to `None` (inherit global `NORMALIZATION` / `LOG_BASE` / `SCALING`).
+
+### Note on sample scaling (volume/concentration correction)
+
+`sample_scaling.py` (Step 2a) is an optional step for correcting a **known**
+physical value you measured per sample — e.g. the final volume an extract was
+concentrated/resuspended into (22 µL, 5 µL, ...) — as opposed to the
+data-driven `NORMALIZATION` methods (pqn/sum/median) in Step 3. Disabled by
+default (`ENABLE_SAMPLE_SCALING = False`). Values are entered per sample in
+`SAMPLE_SCALING_VALUES` and converted to a factor relative to
+`SAMPLE_SCALING_REFERENCE`, not used as raw multipliers. See `config.py` and
+`PIPELINE_WIKI.md` §3b for the full explanation of the relative-factor
+formula and the `"dilution"` vs `"amount"` direction setting.
 
 ### Note on the exclusion list and targeted list
 
@@ -130,6 +143,7 @@ Or run individual steps independently (useful when re-running after parameter ch
 ```bash
 python data_import.py              # Step 1  - re-run if data or RT_MARGIN changes
 python blank_correction.py         # Step 2  - re-run if FOLD_CHANGE_THRESHOLD changes
+python sample_scaling.py           # Step 2a - re-run if SAMPLE_SCALING_* changes (optional)
 python prevalence_histogram.py     # Step 2b - review detection rates after blank correction
 python compound_classification.py  # Step 2c - refresh PubChem annotations (uses cache)
 python compound_class_plots.py     # Step 2d - re-run after classification or CLASS_PIE_* changes
@@ -153,7 +167,13 @@ output/
 └── 2026-04-14_15-30-00/             one folder per pipeline run (YYYY-MM-DD_HH-MM-SS)
     |-- pipeline.log                 full terminal output captured during this run
     |-- peak_matrix_raw.csv                  features x samples (after feature detection)
-|-- peak_matrix_blank_corrected.csv      after blank correction (full feature set)
+|-- peak_matrix_blank_corrected.csv      after blank correction (full feature set); overwritten
+|                                        with volume/concentration-corrected values when
+|                                        ENABLE_SAMPLE_SCALING = True
+|-- peak_matrix_blank_corrected_unscaled.csv  backup of the matrix before sample scaling
+|                                        (only written when ENABLE_SAMPLE_SCALING = True)
+|-- sample_scaling_factors.csv           audit log: sample, raw_value, reference_value,
+|                                        direction, factor (only when ENABLE_SAMPLE_SCALING = True)
 |-- peak_matrix_processed_pca.csv        normalized+log+scaled (PCA settings); prevalence
 |                                        filter + EXCLUSION_LIST applied; used by: PCA
 |-- peak_matrix_processed_hca.csv        normalized+log+scaled (HCA settings); full feature
@@ -254,6 +274,10 @@ output/
 | `FOLD_CHANGE_THRESHOLD` | `3.0` | Minimum sample/blank ratio to retain a feature |
 | `BLANK_USE_MZ` | `True` | Also require m/z proximity for a blank peak to count as a match; prevents a different compound eluting at the same RT in the blank from incorrectly removing a sample feature |
 | `BLANK_MZ_TOLERANCE` | `0.0005` | Da — maximum \|feature_mz − blank_mz\| accepted when `BLANK_USE_MZ = True` |
+| `ENABLE_SAMPLE_SCALING` | `False` | Run the volume/concentration correction step (Step 2a) |
+| `SAMPLE_SCALING_VALUES` | `{}` | Dict of sample filename (no `.csv`) → raw physical value (e.g. final volume in µL) |
+| `SAMPLE_SCALING_REFERENCE` | `"mean"` | What each value is expressed relative to: `"mean"` \| `"median"` \| a fixed number |
+| `SAMPLE_SCALING_DIRECTION` | `"dilution"` | `"dilution"` = area × relative factor (larger value = more dilute); `"amount"` = area ÷ relative factor (larger value = more material) |
 | `EXCLUSION_LIST` | `[]` | Compounds to withhold from PCA; matched by RT ± `EXCLUSION_RT_MARGIN` |
 | `TARGETED_LIST` | `[]` | Compounds for targeted boxplots; falls back to `EXCLUSION_LIST` when empty |
 | `EXCLUSION_RT_MARGIN` | `0.05` | ± RT window (min) for exclusion/targeted matching |

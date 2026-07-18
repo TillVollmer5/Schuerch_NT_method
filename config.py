@@ -28,8 +28,8 @@ OUTPUT_DIR = "output"   # all output files are written here
 BLANK_PREFIX  = "Blank"
 
 SAMPLE_GROUPS = [
-    ("S",   "S"),     # group 1 - samples               (S1-S6)
-    ("S-R", "S-R"),   # group 2 - reference/treatment  (S-R1, S-R2, S-R3)
+    ("Processed",   "c"),     # group 1 - samples               (S1-S6)
+    ("Sample", "s"),   # group 2 - reference/treatment  (S-R1, S-R2, S-R3)
     ]
 
 # --- Feature detection (data_import.py) --------------------------------------
@@ -38,9 +38,9 @@ RT_MARGIN    = 0.05    # minutes  - peaks within this RT window -> same feature
 
 USE_MZ       = True   # if True, also require m/z proximity to merge peaks
                        # recommended for samples with many co-eluting compounds
-MZ_TOLERANCE = 0.001   # Da  - used only when USE_MZ = True
+MZ_TOLERANCE = 0.005   # Da  - used only when USE_MZ = True
 
-ALIGN_RT          = True   # apply median RT-shift correction across samples before detection
+ALIGN_RT          = False   # apply median RT-shift correction across samples before detection
 MZ_ALIGN_TOLERANCE = 0.1   # Da  - m/z window used during RT alignment
 
 VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
@@ -58,19 +58,19 @@ VALUE_COL = "Area"     # column to extract from raw CSV: "Area" or "Height"
 #   [rt,mz,"name"]  - specify RT, m/z, and a name for reference; m/z can be None to ignore m/z in matching
 
 EXCLUSION_LIST = [
-[5.997,  41.0384, "Z-3-Hexenal"],
-[7.735,  83.0492, "E-2-Hexenal"],
-[7.801,  67.0542, "Z-3-Hexenol"],
+#[5.997,  41.0384, "Z-3-Hexenal"],
+#[7.735,  83.0492, "E-2-Hexenal"],
+#[7.801,  67.0542, "Z-3-Hexenol"],
 #[8.958, 104.0621, "Styrene"], #no wait it is not isoprene
-[12.88,  67.0542, "Z-3-Hexenol acetate"],
-[13.205, 67.0542, "E-2-Hexenol acetate"],
-[13.522,119.0856, "Cymene"],
-[13.665, 41.0384, "Limonene"],
-[15.93,  93.0699, "Linalool"],
-[16.375, 41.0384, "DMNT"],
-[21.529, 117.0573, "Indole"],
-[25.049, 91.0542, "(-)-(E)-Caryophyllene"],
-[28.763, 81.0699, "TMTT"],
+#[12.88,  67.0542, "Z-3-Hexenol acetate"],
+#[13.205, 67.0542, "E-2-Hexenol acetate"],
+#[13.522,119.0856, "Cymene"],
+#[13.665, 41.0384, "Limonene"],
+#[15.93,  93.0699, "Linalool"],
+#[16.375, 41.0384, "DMNT"],
+#[21.529, 117.0573, "Indole"],
+#[25.049, 91.0542, "(-)-(E)-Caryophyllene"],
+#[28.763, 81.0699, "TMTT"],
 #[5.997, 41.0384, "Z-3-Hexenal"],#3-Hexenal
 #[7.735, 83.0492, "E-2-Hexenal"],#2-Hexenal, (E)- E/Z based on literature
 #[7.801, 67.0542, "Z-3-Hexenol"],#3-Hexen-1-ol, (Z)-
@@ -108,8 +108,8 @@ EXCLUSION_MZ_TOLERANCE = MZ_TOLERANCE   # +- Da around each listed m/z based on 
 #        group but NONE of the other is the most biologically interesting result.
 #        Filtering by overall prevalence would remove exactly those features.
 
-MIN_PREVALENCE_PCA     = 4/12  # e.g. 0.5 = detected in >= 50% of all samples
-MIN_PREVALENCE_HCA     = 4/12  # set > 0 to drop sparse features from the heatmap
+MIN_PREVALENCE_PCA     = 1/5  # e.g. 0.5 = detected in >= 50% of all samples
+MIN_PREVALENCE_HCA     = 2/5  # set > 0 to drop sparse features from the heatmap
 MIN_PREVALENCE_VOLCANO = 0.0   # leave at 0.0 to keep group-specific features
 
 PREVALENCE_HISTOGRAM_SHOW_THRESHOLDS = False
@@ -148,13 +148,65 @@ BLANK_REFERENCE_MODE = "max"
 # "each" - each blank file is compared independently; a sample/group/mean fails
 #           if its fold change falls below FOLD_CHANGE_THRESHOLD for ANY blank file
 
-BLANK_EXCLUDE_KEYWORDS = ["silan", "Silan", "siloxane", "Siloxane", "chloro", "Chloro", "phthalate", "Phthalate", "bromo", "Bromo", "iodo", "Iodo", "halo", "Halo", "Diisopropylnaphthalene", "fluoro"]
+BLANK_EXCLUDE_KEYWORDS = ["silan", "Silan", "siloxane", "Siloxane", "Diisopropylnaphthalene"]
 # Features whose compound name or molecular formula contains any of these
 # substrings (case-insensitive) are removed after blank correction.
 # Useful for stripping known instrument/column contaminants by name or element.
 # Examples:
 #   BLANK_EXCLUDE_KEYWORDS = ["silan"]   # removes siloxanes / Si-containing compounds
 #   BLANK_EXCLUDE_KEYWORDS = ["column", "phthalate"]
+
+# --- Sample scaling (sample_scaling.py) — known physical correction ----------
+# Corrects for a KNOWN physical value you measured per sample — e.g. the final
+# volume the extract was concentrated/resuspended into before injection
+# (22 uL, 5 uL, ...). This is independent of, and runs BEFORE, the data-driven
+# statistical normalization below (NORMALIZATION = "pqn"/"sum"/"median") —
+# those still run afterward on the corrected matrix to handle whatever
+# technical variance the physical value doesn't explain.
+#
+# Raw values are NOT used as multipliers directly — using an absolute,
+# unit-dependent number (22 vs 5) as a multiplier would make the correction's
+# magnitude depend on which unit you happened to record in, and would push
+# the whole matrix far from its original scale. Instead each sample's value
+# is expressed RELATIVE to SAMPLE_SCALING_REFERENCE, so the factor is
+# unit-independent and centred around 1:
+#
+#     relative_factor = value / reference_value
+#
+# SAMPLE_SCALING_DIRECTION then decides how that factor is applied:
+#   "dilution" - larger value = more dilute (e.g. final resuspension/
+#                concentration volume). The same amount of analyte in more
+#                solvent gives a LOWER measured area, so area is MULTIPLIED
+#                by relative_factor to correct back toward "amount
+#                extracted".  (default — matches "22 uL vs 5 uL" use case)
+#   "amount"   - larger value = more starting material (e.g. dry weight,
+#                cell count). Area is DIVIDED by relative_factor to express
+#                results per unit of that amount.
+
+ENABLE_SAMPLE_SCALING = False
+# Set to True to activate this step. When False (default), sample areas are
+# left untouched and no scaling files are written — fully backward compatible.
+
+SAMPLE_SCALING_VALUES = {
+    # "Sample_S1_1": 22,   # final volume in uL (or any consistent unit)
+    # "Sample_S3_3": 5,
+    # "Sample_S7_1": 10,
+}
+# Map from sample filename without the .csv extension (matching the names in
+# DATA_DIR and sample_groups.csv) to the raw physical value for that sample.
+# Samples with no entry here get factor = 1.0 (no correction applied) and a
+# warning is printed at run time so missing values don't go unnoticed.
+
+SAMPLE_SCALING_REFERENCE = "mean"
+# What each sample's value is expressed relative to:
+#   "mean"   - mean of all values in SAMPLE_SCALING_VALUES  (default)
+#   "median" - median of all values in SAMPLE_SCALING_VALUES
+#   <number> - a fixed reference you choose, e.g. 20 — use this if you have a
+#              "standard" protocol target volume in mind rather than whatever
+#              this particular batch happened to average.
+
+SAMPLE_SCALING_DIRECTION = "dilution"
+# "dilution" | "amount" — see explanation above.
 
 # --- Normalization, log transform, and scaling --------------------------------
 #
@@ -250,7 +302,7 @@ TARGETED_BOXPLOT_ROWS = 3
 # Number of rows in the boxplot grid.  Columns are computed automatically.
 # Increase for more compounds to keep panels readable.
 
-RUN_TARGETED_BOXPLOTS = True
+RUN_TARGETED_BOXPLOTS = False
 # Set to False to skip targeted boxplot generation in pipeline.py.
 
 STAT_TEST_BOXPLOT = "mannwhitney"
@@ -348,7 +400,7 @@ N_COMPONENTS    = 2   # number of principal components to compute and save
 PCA_PLOT_X      = 1   # PC number to plot on the X axis (1-indexed)
 PCA_PLOT_Y      = 2   # PC number to plot on the Y axis (1-indexed)
 
-PCA_ELLIPSE      = True  # draw 95 % confidence ellipses per group (requires scipy)
+PCA_ELLIPSE      = False  # draw 95 % confidence ellipses per group (requires scipy)
 PCA_TOP_LOADINGS = 30   # number of top-loading features to label in the loadings scatter plot
                         # set to 0 to skip labels
 PCA_BAR_TOP      = 30   # number of features shown in the loading bar chart (pca_loadings_bar.png)
@@ -356,7 +408,7 @@ PCA_BAR_TOP      = 30   # number of features shown in the loading bar chart (pca
                         # Selected by Euclidean distance in the PCA_PLOT_X/PCA_PLOT_Y loading plane.
 
 # --- Compound class plots (compound_class_plots.py) --------------------------
-RUN_CLASS_PLOTS = True
+RUN_CLASS_PLOTS = False
 # Set to False to skip pie chart generation entirely in pipeline.py.
 
 CLASS_PIE_COLUMNS = ["superclass", "npclassifier_pathway", "npclassifier_superclass", "subclass"]
@@ -505,7 +557,7 @@ BAR_TOP_COL_PCY = "#ffa724"   # lightorange - PC_y bar
 RUN_COMPOUND_CLASSIFICATION = True
 # Set to False to skip the PubChem classification step entirely in pipeline.py.
 
-PUBCHEM_CACHE_ONLY = False
+PUBCHEM_CACHE_ONLY = True
 # True  - build the output from the local cache only; no network requests are
 #         made.  Compounds not yet in the cache are marked "unnamed" in the
 #         output instead of being queried.  Use this when you are offline, want

@@ -23,6 +23,10 @@ and the final plots.
 3. [Step 2 — Blank correction](#3-step-2--blank-correction)
    - 3.1 [Optional m/z gate](#31-optional-mz-gate)
    - 3.2 [Fold-change filter](#32-fold-change-filter)
+3b. [Step 2a — Sample scaling (volume/concentration correction)](#3b-step-2a--sample-scaling-volumeconcentration-correction)
+   - 3b.1 [Why a separate step from statistical normalization](#3b1-why-a-separate-step-from-statistical-normalization)
+   - 3b.2 [Relative factor and direction](#3b2-relative-factor-and-direction)
+   - 3b.3 [Outputs](#3b3-outputs)
 4. [Step 2b — Prevalence histogram](#4-step-2b--prevalence-histogram)
    - 4.1 [Prevalence calculation](#41-prevalence-calculation)
    - 4.2 [Bin alignment and x-axis scaling](#42-bin-alignment-and-x-axis-scaling)
@@ -662,6 +666,72 @@ written to `blank_correction_audit.csv`. This log enables full traceability:
 
 `features_removed_blank.csv` is also written for backward compatibility with
 tools that read the old pipeline output format.
+
+---
+
+## 3b. Step 2a — Sample scaling (volume/concentration correction)
+
+**Script:** `sample_scaling.py`
+**Input:** `peak_matrix_blank_corrected.csv`
+**Output:** `peak_matrix_blank_corrected.csv` (overwritten, only when enabled),
+`peak_matrix_blank_corrected_unscaled.csv`, `sample_scaling_factors.csv`
+
+Corrects for a **known physical value** measured per sample — most commonly
+the final volume an extract was concentrated or resuspended into before
+injection (e.g. 22 µL vs 5 µL). Disabled by default (`ENABLE_SAMPLE_SCALING =
+False`); when disabled the step is a no-op and no files are written.
+
+### 3b.1 Why a separate step from statistical normalization
+
+`NORMALIZATION` (`pqn` / `sum` / `median`, applied in Step 3) is
+**data-driven**: it estimates a per-sample correction from the feature
+intensities themselves, with no knowledge of how the sample was actually
+prepared. Sample scaling is the opposite — it applies a correction you
+*measured*, independent of what the resulting spectrum looks like.
+
+The step runs between blank correction and normalization:
+
+- **After** blank correction, so the sample-vs-blank fold-change comparison
+  (§3.2) stays on the true raw instrument signal, unaffected by how
+  concentrated the final extract was.
+- **Before** normalization, so PQN/sum/median still run afterward on the
+  scaled matrix and can correct for whatever technical variance the physical
+  value doesn't explain (e.g. extraction efficiency differences).
+
+### 3b.2 Relative factor and direction
+
+Raw values (`22`, `5`, ...) are never used as multipliers directly — an
+absolute, unit-dependent number would make the correction's magnitude
+depend on whether you recorded µL or mL, and would push the whole matrix far
+from its original scale. Instead each sample's value is expressed relative
+to a reference (`SAMPLE_SCALING_REFERENCE`: `"mean"`, `"median"`, or a fixed
+number), so the factor is unit-independent and centred around 1:
+
+```
+relative_factor = value / reference_value
+```
+
+`SAMPLE_SCALING_DIRECTION` then decides how the factor is applied:
+
+| Direction | Meaning | Applied as |
+|-----------|---------|------------|
+| `"dilution"` (default) | Larger value = more dilute (e.g. final resuspension volume). Same amount of analyte in more solvent → lower measured area. | `area × relative_factor` |
+| `"amount"` | Larger value = more starting material (e.g. dry weight, cell count). | `area ÷ relative_factor` |
+
+Samples with no entry in `SAMPLE_SCALING_VALUES` get `factor = 1.0` (no
+correction) and a warning is printed — a missing value never silently drops
+or removes a sample.
+
+### 3b.3 Outputs
+
+- `peak_matrix_blank_corrected.csv` — overwritten with the scaled values, so
+  every downstream step (normalization, PCA/HCA/volcano matrices, targeted
+  boxplots, classification.csv) picks up the correction transparently
+  without needing separate handling.
+- `peak_matrix_blank_corrected_unscaled.csv` — backup of the matrix before
+  scaling was applied, for traceability.
+- `sample_scaling_factors.csv` — audit log with columns `sample`,
+  `raw_value`, `reference_value`, `direction`, `factor`.
 
 ---
 
